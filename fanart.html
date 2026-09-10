@@ -1,0 +1,3090 @@
+<!DOCTYPE html>
+<html lang="ja" data-site-theme="light">
+<head>
+<meta charset="UTF-8">
+
+<!-- GoatCounter analytics -->
+<script data-goatcounter="https://oshitemairu.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>ファンアート | 鴛照昧琉</title>
+<meta name="description" content="鴛照昧琉のポートフォリオサイト内、ファンアート投稿ページです。">
+<meta name="robots" content="index, follow">
+<meta name="theme-color" content="#F6F1E6">
+<meta name="color-scheme" content="light">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Person",
+  "name": "鴛照昧琉",
+  "alternateName": "Oshitemairu",
+  "jobTitle": "Illustrator / Musician",
+  "description": "絵と言葉、手仕事による作品を発表するイラストレーター・作家。",
+  "knowsAbout": ["Illustration", "Music", "Text", "Photography"],
+  "mainEntityOfPage": {
+    "@type": "ProfilePage"
+  }
+}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;600&family=Zen+Kaku+Gothic+New:wght@400&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;600&family=Zen+Kaku+Gothic+New:wght@400&display=swap" rel="stylesheet"></noscript>
+<!-- Firebase(ファンアート投稿の保存・いいね機能に使用) -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, increment, serverTimestamp, query, where, orderBy, limit, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+
+  // ここに、ご自身のFirebaseプロジェクトの設定値を入力してください。
+  // (他のページと、同じ値を入れてください。)
+  const firebaseConfig = {
+    apiKey: "YOUR_FIREBASE_API_KEY",
+    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT_ID.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID"
+  };
+
+  window.__fanartFirebase = {};
+  window.__siteFirebase = {};
+  try{
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+    const provider = new GoogleAuthProvider();
+    window.__fanartFirebase = { db, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, increment, serverTimestamp, query, where, orderBy, limit, ready:true };
+    window.__siteFirebase = { auth, db, provider, signInWithPopup, signOut, onAuthStateChanged, doc, getDoc, setDoc, deleteDoc, collection, getDocs, serverTimestamp, runTransaction, ready:true };
+  }catch(err){
+    console.error('Firebase init failed:', err);
+    window.__fanartFirebase = { ready:false };
+    window.__siteFirebase = { ready:false };
+  }
+  document.dispatchEvent(new CustomEvent('firebase-ready'));
+  document.dispatchEvent(new CustomEvent('site-firebase-ready'));
+</script>
+<script>
+  // 投稿者名などの「自由入力された文字列」を画面に表示する前に、必ずこの関数を通す。
+  // これを通さずに直接HTMLに埋め込むと、悪意のある入力によって任意のコードが実行されてしまう
+  // (XSS脆弱性)ため、ユーザーが入力した文字列を表示する場所では、必ず使用すること。
+  window.escapeHtml = function(str){
+    const div = document.createElement('div');
+    div.textContent = str == null ? '' : String(str);
+    return div.innerHTML;
+  };
+</script>
+<script>
+  // サーバー(Firebase)の1日の無料枠を使い切った時、その合図(エラー)を検知するための仕組み。
+  // 新しい通信を増やすものではなく、既存の通信の「結果」を見て判定するだけ。
+  window.__quotaExceeded = false;
+  window.isQuotaError = function(err){
+    return !!(err && (err.code === 'resource-exhausted' || String(err && err.message).includes('quota')));
+  };
+  window.onQuotaExceeded = function(){
+    if(window.__quotaExceeded) return;
+    window.__quotaExceeded = true;
+    console.warn('Firebaseの利用上限に達したため、リアルタイム機能などを一時的に停止します。');
+    document.dispatchEvent(new CustomEvent('quota-exceeded'));
+  };
+</script>
+<style>
+  
+  *{ box-sizing:border-box; }
+  
+  html, body{ touch-action:pan-x pan-y; }
+  
+  html{
+    scroll-behavior:smooth;
+    background-color:var(--kinari);
+    min-height:100%;
+    color-scheme:light;
+    transition:var(--t-bg);
+  }
+  
+  img{ max-width:100%; display:block; }
+  
+  a{ color:inherit; text-decoration:none; }
+  
+  ul{ list-style:none; margin:0; padding:0; }
+  
+  h1,h2,h3{ font-family:var(--f-mincho); font-weight:600; margin:0; }
+  
+  button{ font-family:inherit; }
+  
+  .wrap{ max-width:1180px; margin:0 auto; padding:0 6vw; }
+  
+  .bg-gradient{
+    position:fixed; inset:0; z-index:0; pointer-events:none;
+    background-image:linear-gradient(to top, var(--bg-glow) 0%, rgba(0,0,0,0) 68%);
+  }
+  
+  header{
+    position:fixed; top:0; left:0; right:0; z-index:100;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:calc(22px + env(safe-area-inset-top)) 6vw 22px;
+    transition:background-color .5s ease, padding .4s ease, box-shadow .4s ease;
+  }
+  
+  header.scrolled{
+    background-color:rgba(246,241,230,.96);
+    padding:calc(14px + env(safe-area-inset-top)) 6vw 14px;
+    box-shadow:0 1px 0 var(--line);
+  }
+  
+  [data-site-theme="dark"] header.scrolled{ background-color:rgba(20,16,14,.86); }
+  
+  .logo{ display:flex; align-items:center; gap:10px; }
+  
+  .logo svg{ width:30px; height:30px; }
+  
+  .logo svg circle{ transition:stroke .6s ease; }
+  
+  .logo span{
+    font-family:var(--f-mincho); font-size:calc(16px * var(--font-scale, 1)); letter-spacing:.14em; font-weight:600;
+  }
+  
+  nav a::after{
+    content:''; position:absolute; left:0; right:100%; bottom:0; height:1px;
+    background:var(--bengara); transition:right .35s var(--ease-io);
+  }
+  
+  nav a:hover::after, nav a:focus-visible::after{ right:0; }
+  
+
+  .icon-btn{
+    flex:none; width:38px; height:38px; border-radius:50%;
+    border:1px solid var(--line); background:transparent; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+    transition:border-color .3s ease, transform .3s ease;
+  }
+  
+  .icon-btn:hover{ border-color:var(--bengara); transform:translateY(-2px); }
+  
+  .icon-btn svg{ width:16px; height:16px; stroke:var(--sumi); }
+  
+  .icon-btn.active{ background:var(--bengara); border-color:var(--bengara); }
+  
+  .icon-btn.active svg{ stroke:var(--kinari); }
+  
+
+  .settings-panel{
+    position:absolute; top:100%; right:6vw; margin-top:10px;
+    width:min(280px, 88vw); background:var(--kinari); border:1px solid var(--line);
+    border-radius:4px; box-shadow:var(--paper-shadow); padding:20px; z-index:150;
+  }
+  
+  .settings-row{
+    display:flex; align-items:center; justify-content:space-between; gap:14px;
+  }
+  
+  .settings-row + .settings-row{ margin-top:18px; }
+  
+  .settings-row-column{ flex-direction:column; align-items:flex-start; gap:8px; }
+  
+  .settings-row-label{
+    font-size:calc(12px * var(--font-scale, 1)); letter-spacing:.08em; color:var(--usuzumi); white-space:nowrap;
+  }
+  
+  .settings-row input[type="range"]{
+    width:100%; accent-color:var(--bengara); cursor:pointer;
+  }
+  
+  .bgm-toggle svg{ width:14px; height:14px; stroke:var(--sumi); fill:none; }
+  
+  .bgm-toggle[aria-pressed="true"]{ background:var(--bengara); border-color:var(--bengara); }
+  
+  .bgm-toggle[aria-pressed="true"] svg{ stroke:var(--kinari); }
+  
+
+  .bottom-sheet-backdrop, .qr-modal-backdrop{
+    position:fixed; inset:0; background:rgba(20,16,14,.45); z-index:400;
+    opacity:0; transition:opacity .35s ease;
+  }
+  
+  .bottom-sheet-backdrop.open, .qr-modal-backdrop.open{ opacity:1; }
+  
+  .bottom-sheet{
+    position:fixed; left:0; right:0; bottom:0; z-index:401;
+    background:var(--kinari); border-top:1px solid var(--line);
+    border-radius:16px 16px 0 0; box-shadow:0 -10px 40px rgba(0,0,0,.18);
+    max-height:70vh; display:flex; flex-direction:column;
+    transform:translateY(100%); transition:transform .4s var(--ease-out);
+  }
+  
+  .bottom-sheet.open{ transform:translateY(0); }
+  
+  .bottom-sheet-handle{
+    width:40px; height:4px; border-radius:2px; background:var(--line);
+    margin:12px auto 4px;
+  }
+  
+  .bottom-sheet-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:8px 24px 16px; border-bottom:1px solid var(--line);
+  }
+  
+  .bottom-sheet-head h3{
+    font-family:var(--f-mincho); font-size:calc(17px * var(--font-scale, 1)); font-weight:600;
+  }
+  
+  .bottom-sheet-sub{ font-size:calc(12px * var(--font-scale, 1)); color:var(--usuzumi); font-weight:400; }
+  
+  .bottom-sheet-close svg{ width:14px; height:14px; stroke:var(--sumi); }
+  
+  .rewatch-list{
+    display:flex; gap:16px; overflow-x:auto; padding:20px 24px 28px;
+  }
+  
+  .rewatch-item{
+    flex:none; width:130px; cursor:pointer;
+  }
+  
+  .rewatch-thumb{
+    width:130px; height:130px; border-radius:6px; position:relative; overflow:hidden;
+  }
+  
+  .rewatch-item p{
+    margin-top:8px; font-size:calc(12px * var(--font-scale, 1)); color:var(--sumi);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  
+  .rewatch-empty{ padding:20px 24px 32px; font-size:calc(13px * var(--font-scale, 1)); color:var(--usuzumi); }
+  
+
+  .qr-modal{
+    position:fixed; top:50%; left:50%; transform:translate(-50%,-50%) scale(.9);
+    z-index:401; background:var(--kinari); border-radius:8px; box-shadow:var(--paper-shadow);
+    padding:36px 32px 28px; text-align:center; opacity:0;
+    transition:opacity .3s ease, transform .3s ease;
+    width:min(300px, 86vw);
+  }
+  
+  .qr-modal.open{ opacity:1; transform:translate(-50%,-50%) scale(1); }
+  
+  .qr-modal .bottom-sheet-close{ position:absolute; top:14px; right:14px; }
+  
+  .qr-modal-label{
+    font-family:var(--f-mincho); font-size:calc(14px * var(--font-scale, 1)); color:var(--usuzumi); margin-bottom:18px;
+  }
+  
+  .qr-modal img{
+    display:block; margin:0 auto; border-radius:4px;
+    width:220px; height:220px; object-fit:contain;
+    background:var(--kinari-2); font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi);
+  }
+  
+  .qr-modal-url{
+    margin-top:16px; font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi);
+    overflow-wrap:anywhere; word-break:normal; max-width:230px; margin-left:auto; margin-right:auto;
+    line-height:1.6;
+  }
+  
+
+  .nav-has-children{ position:relative; }
+  
+  #navArts{ cursor:pointer; display:inline-flex; align-items:center; gap:5px; }
+  
+  .nav-arts-arrow{
+    display:inline-block; font-size:calc(10px * var(--font-scale, 1)); transition:transform .3s var(--ease-io);
+  }
+  
+  .nav-has-children.expanded .nav-arts-arrow{ transform:rotate(180deg); }
+  
+  .nav-submenu{
+    list-style:none; margin:0; padding:0;
+    max-height:0; overflow:hidden; opacity:0; transform:translateY(-4px);
+    transition:max-height .35s ease, opacity .3s ease, transform .3s ease;
+  }
+  
+  .nav-has-children.expanded .nav-submenu{ max-height:260px; opacity:1; transform:translateY(0); }
+  
+  .nav-submenu li{ padding-top:9px; }
+  
+  .nav-submenu a{ font-size:calc(12px * var(--font-scale, 1)); letter-spacing:.1em; color:var(--usuzumi); }
+  
+  .nav-submenu a:hover{ color:var(--bengara); }
+  
+  .nav-placeholder{ cursor:default; }
+  
+
+  @media (min-width:861px){
+    .nav-submenu{
+      position:absolute; top:100%; left:65%; transform:translateX(-50%) translateY(-6px);
+      margin-top:16px; padding:14px 22px; min-width:150px;
+      background:var(--kinari); border:1px solid var(--line); border-radius:4px;
+      box-shadow:var(--paper-shadow); text-align:left;
+      max-height:none; overflow:visible;
+      opacity:0; visibility:hidden;
+      transition:opacity .25s ease, transform .25s ease, visibility 0s linear .25s;
+    }
+    .nav-has-children.expanded .nav-submenu{
+      opacity:1; visibility:visible; transform:translateX(-50%) translateY(0);
+      transition:opacity .25s ease, transform .25s ease;
+    }
+    .nav-submenu li{ padding-top:7px; }
+    .nav-submenu li:first-child{ padding-top:0; }
+  }
+  
+  .site-search-panel{
+    position:absolute; top:100%; right:6vw; margin-top:10px;
+    width:min(360px, 88vw); background:var(--kinari); border:1px solid var(--line);
+    border-radius:4px; box-shadow:var(--paper-shadow); padding:16px; z-index:150;
+  }
+  
+  .site-search-input{
+    width:100%; font-family:var(--f-gothic); font-size:max(16px, calc(16px * var(--font-scale, 1))); color:var(--sumi);
+    background:var(--kinari-2); border:1px solid var(--line); border-radius:20px;
+    padding:9px 18px; transition:border-color .3s ease;
+  }
+  
+  .site-search-input:focus{ outline:none; border-color:var(--bengara); }
+  
+  .site-search-results{ list-style:none; margin:12px 0 0; padding:0; max-height:50vh; overflow-y:auto; }
+  
+  .site-search-results li + li{ border-top:1px solid var(--line); }
+  
+  .site-search-results a{
+    display:block; padding:7px 4px; transition:opacity .2s ease;
+  }
+  
+  .site-search-results a:hover{ opacity:.7; }
+  
+  .site-search-result-section{
+    font-size:calc(10px * var(--font-scale, 1)); letter-spacing:.12em; color:var(--bengara); text-transform:uppercase; margin-bottom:2px;
+  }
+  
+  .site-search-result-snippet{
+    display:block; font-size:calc(13px * var(--font-scale, 1)); color:var(--sumi); line-height:1.5;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  
+  .site-search-empty{ font-size:calc(12px * var(--font-scale, 1)); color:var(--usuzumi); margin:12px 4px 0; }
+  
+  .lang-toggle{
+    flex:none; font-family:var(--f-gothic); font-size:calc(13px * var(--font-scale, 1));
+    letter-spacing:.06em; color:var(--sumi); background:transparent;
+    border:1px solid var(--line); border-radius:20px; padding:6px 16px;
+    cursor:pointer; transition:border-color .4s ease, color .4s ease, transform .3s ease;
+  }
+  
+  .theme-toggle{ position:relative; }
+  
+  [data-site-theme="dark"] .theme-toggle{ border-color:var(--bengara); }
+  
+  [data-site-theme="dark"] .theme-toggle::before{ transform:translateY(0); }
+  
+  .theme-toggle .tt-icon{
+    position:absolute; font-family:var(--f-mincho); font-size:calc(14px * var(--font-scale, 1)); color:var(--sumi);
+    transition:opacity .5s ease, transform .5s ease;
+  }
+  
+  .tt-sun{ opacity:1; transform:scale(1) rotate(0deg); }
+  
+  .tt-moon{ opacity:0; transform:scale(.5) rotate(-40deg); }
+  
+  [data-site-theme="dark"] .tt-sun{ opacity:0; transform:scale(.5) rotate(40deg); }
+  
+  [data-site-theme="dark"] .tt-moon{ opacity:1; transform:scale(1) rotate(0deg); }
+  
+  .menu-btn{
+    display:none; flex-direction:column; gap:5px; background:none; border:0; cursor:pointer; z-index:200;
+  }
+  
+  .menu-btn span{ width:24px; height:1px; background:var(--sumi); transition:transform .3s var(--ease-io), opacity .2s ease, background-color .5s; transform-origin:center; }
+  
+  .menu-btn.open span:nth-child(1){ transform:translateY(6px) rotate(45deg); }
+  
+  .menu-btn.open span:nth-child(2){ opacity:0; }
+  
+  .menu-btn.open span:nth-child(3){ transform:translateY(-6px) rotate(-45deg); }
+  
+  section{ position:relative; padding:130px 0; scroll-margin-top:100px; }
+  
+  .sec-head{
+    margin-bottom:70px; max-width:680px;
+    display:flex; gap:26px; align-items:flex-start;
+  }
+  
+  .sec-label{
+    flex:none; writing-mode:vertical-rl; text-orientation:mixed;
+    font-family:var(--f-mincho); font-size:calc(12px * var(--font-scale, 1)); letter-spacing:.5em; color:var(--usuzumi);
+    border-right:1px solid var(--line); padding-right:16px; padding-top:2px;
+    height:100px;
+  }
+  
+  .sec-head h2{ font-size:calc(clamp(28px,3.4vw,42px) * var(--font-scale, 1)); margin-bottom:22px; }
+  
+  .sec-head p{ color:var(--usuzumi); font-size:calc(15px * var(--font-scale, 1)); max-width:520px; }
+  
+  .reveal{ opacity:0; transform:translateY(28px); transition:opacity .9s cubic-bezier(.2,.6,.2,1), transform .9s cubic-bezier(.2,.6,.2,1); }
+  
+  .reveal.in{ opacity:1; transform:none; }
+  
+  .btn-line{
+    display:inline-flex; align-items:center; gap:12px; font-size:calc(13px * var(--font-scale, 1)); letter-spacing:.18em;
+    padding-bottom:6px; border-bottom:1px solid var(--sumi); transition:border-color .3s, color .3s, gap .3s;
+  }
+  
+  .btn-line:hover{ border-color:var(--bengara); color:var(--bengara); gap:18px; }
+  
+
+
+
+  .press-fill{ position:relative; overflow:hidden; }
+  
+  .press-fill::before{
+    content:''; position:absolute; inset:0; background:var(--bengara); border-radius:inherit;
+    transform:translateY(101%); transition:transform .4s var(--ease-out); z-index:0;
+  }
+  
+  .press-fill:active::before{ transform:translateY(0); }
+  
+  .press-fill:active{ border-color:var(--bengara); }
+  
+  .press-fill svg{ position:relative; z-index:1; transition:stroke .3s ease; }
+  
+  .press-fill:active svg{ stroke:var(--kinari); }
+  
+  .press-fill span:not(.tt-icon){ position:relative; z-index:1; }
+  
+  @media (hover:hover){
+    .press-fill:hover::before{ transform:translateY(0); }
+    .press-fill:hover{ border-color:var(--bengara); }
+    .press-fill:hover svg{ stroke:var(--kinari); }
+  }
+  
+
+  footer{ padding:60px 0 calc(34px + env(safe-area-inset-bottom)); border-top:1px solid var(--line); }
+  
+  .foot-row{
+    display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:20px;
+  }
+  
+  .foot-logo{ display:flex; align-items:center; gap:10px; }
+  
+  .foot-logo svg{ width:24px; height:24px; }
+  
+  .foot-logo span{ font-family:var(--f-mincho); font-size:calc(14px * var(--font-scale, 1)); letter-spacing:.12em; }
+  
+  .foot-nav{ display:flex; gap:26px; font-size:calc(12px * var(--font-scale, 1)); letter-spacing:.08em; color:var(--usuzumi); }
+  
+  .foot-copy{ font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi); letter-spacing:.04em; margin-top:26px; text-align:center; }
+  
+
+  #fireworksCanvas{
+    position:fixed; inset:0; z-index:0; pointer-events:none;
+    opacity:0; transition:opacity 1s ease;
+  }
+  
+  [data-site-theme="dark"] #fireworksCanvas{ opacity:1; mix-blend-mode:screen; }
+
+  
+  :root{
+    --font-scale: 1;
+    --kinari:   #F6F1E6;
+    --kinari-2: #EFE8D8;
+    --sumi:     #221F1B;
+    --usuzumi:  #726B5E;
+    --ai:       #2B4A5C;
+    --bengara:  #A34430;
+    --kin:      #AD8A54;
+    --line: rgba(34,31,27,.10);
+    --ripple-color: #C9A227;
+    --washi-pattern-color: #C17F79;
+    --paper-shadow: 0 24px 60px -30px rgba(34,31,27,.35);
+    --bg-glow: rgba(199,155,58,.40);
+    --f-mincho: 'Shippori Mincho', 'Hiragino Mincho ProN', 'Yu Mincho', serif;
+    --f-gothic: 'Zen Kaku Gothic New', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', sans-serif;
+    --ease-out: cubic-bezier(.2,.7,.2,1);
+    --ease-io:  cubic-bezier(.4,0,.2,1);
+    --t-bg:     background-color .6s ease;
+    --t-hover:  border-color .3s, transform .3s;
+  }
+  
+  :root[data-site-theme="dark"]{
+    --ripple-color: #FFFFFF;
+    --kinari:   #14100E;
+    --kinari-2: #1B1512;
+    --sumi:     #EDE6D3;
+    --usuzumi:  #B9A98A;
+    --ai:       #C9A227;
+    --bengara:  #E3C25E;
+    --kin:      #7A2A22;
+    --washi-pattern-color: #E3C25E;
+    --line: rgba(201,162,39,.16);
+    --paper-shadow: 0 30px 80px -28px rgba(0,0,0,.75);
+    --bg-glow: rgba(201,162,39,.30);
+  }
+  
+  @media (prefers-reduced-motion: reduce){
+    html{ scroll-behavior:auto; }
+    *{ animation-duration:.01ms !important; animation-iteration-count:1 !important; transition-duration:.01ms !important; scroll-behavior:auto !important; }
+    #fireworksCanvas{ display:none !important; }
+  }
+  
+  body{
+    margin:0;
+    min-height:100vh;
+    min-height:100svh;
+    background-color:var(--kinari);
+    background-image:
+      linear-gradient(to top left, rgba(255,255,255,.45), transparent 60%),
+      url("data:image/svg+xml,<svg%20version%3D%221.1%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2280%22%20height%3D%22120%22%20viewBox%3D%220%200%2080%20120%22%20preserveAspectRatio%3D%22none%22>%0A<path%20fill%3D%22none%22%20d%3D%22M-40-60v240h160v-240z%22/>%0A<path%20fill%3D%22%23C17F79%22%20fill-opacity%3D%220.10%22%20fill-rule%3D%22evenodd%22%20d%3D%22m0%200l19%2019h2l19-19v60l-19%2019h-2l-19-19zm19-60h2v240h-2zm21%200l19%2019h2l19-19v60l-19%2019h-2l-19-19zm19%200h2v240h-2zm-19%20120l19%2019h2l19-19v60l-19%2019h-2l-19-19z%22/>%0A</svg>");
+    background-repeat:no-repeat, repeat;
+    background-size:auto, 56px 84px;
+    color:var(--sumi);
+    font-family:var(--f-gothic);
+    font-weight:400;
+    line-height:1.9;
+    -webkit-font-smoothing:antialiased;
+    overflow-x:hidden;
+    -webkit-tap-highlight-color:transparent;
+    transition:var(--t-bg), color .5s ease;
+  }
+  
+  [data-site-theme="dark"] body{
+    background-image:
+      linear-gradient(to top left, rgba(255,255,255,.16), transparent 60%),
+      url("data:image/svg+xml,<svg%20version%3D%221.1%22%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%2280%22%20height%3D%22120%22%20viewBox%3D%220%200%2080%20120%22%20preserveAspectRatio%3D%22none%22>%0A<path%20fill%3D%22none%22%20d%3D%22M-40-60v240h160v-240z%22/>%0A<path%20fill%3D%22%23E3C25E%22%20fill-opacity%3D%220.035%22%20fill-rule%3D%22evenodd%22%20d%3D%22m0%200l19%2019h2l19-19v60l-19%2019h-2l-19-19zm19-60h2v240h-2zm21%200l19%2019h2l19-19v60l-19%2019h-2l-19-19zm19%200h2v240h-2zm-19%20120l19%2019h2l19-19v60l-19%2019h-2l-19-19z%22/>%0A</svg>");
+  }
+  
+  .lm-stroke{ fill:none; stroke-linecap:round; stroke-linejoin:round; stroke-width:1.3; }
+  
+  [data-site-theme="dark"] .logo-char .lm-stroke, [data-site-theme="dark"] .foot-logo .lm-stroke{ stroke:#D7003A; }
+  
+  .header-right{ display:flex; align-items:center; gap:16px; }
+  
+  nav ul{ display:flex; gap:15px; }
+  
+  nav a{
+    font-size:calc(11.5px * var(--font-scale, 1)); letter-spacing:.06em; position:relative; padding-bottom:4px;
+    color:var(--sumi); white-space:nowrap;
+  }
+  
+  nav a .nav-jp{
+    font-size:0.8em; letter-spacing:0; color:var(--usuzumi); margin-left:1px;
+  }
+  
+
+  .bgm-toggle, .bottom-sheet-close{
+    border-radius:50%; border:1px solid var(--line); background:transparent;
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+  }
+  
+  .simple-toggle{
+    position:relative; width:40px; height:22px; border-radius:11px; background:var(--line);
+    border:none; cursor:pointer; flex:none; transition:background .25s ease;
+  }
+  
+  .simple-toggle-knob{
+    position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%;
+    background:var(--kinari); box-shadow:0 1px 2px rgba(0,0,0,.25); transition:transform .25s ease;
+  }
+  
+  .simple-toggle[aria-pressed="true"]{ background:var(--bengara); }
+  
+  .simple-toggle[aria-pressed="true"] .simple-toggle-knob{ transform:translateX(18px); }
+  
+
+  .bgm-toggle{
+    width:32px; height:32px; transition:border-color .3s ease, background .3s ease;
+  }
+  
+  .bottom-sheet-close{ width:32px; height:32px; flex:none; }
+  
+
+  /* 実績解除の通知(右からスライドして現れ、しばらくして右へ消える) */
+  .achievement-toast{
+    position:fixed; top:calc(80px + env(safe-area-inset-top)); right:24px; z-index:600;
+    display:flex; align-items:center; gap:12px; max-width:min(320px, 80vw);
+    background:var(--sumi); color:var(--kinari); border-radius:6px; padding:14px 18px;
+    box-shadow:0 8px 24px rgba(0,0,0,.3);
+    transform:translateX(140%); transition:transform .5s cubic-bezier(.16,.84,.44,1);
+    pointer-events:none;
+  }
+  
+  .achievement-toast[hidden]{ display:flex; visibility:hidden; }
+  
+  .achievement-toast.show{ transform:translateX(0); }
+  
+  .achievement-toast-icon{ font-size:22px; flex:none; }
+  
+  .achievement-toast-text{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+  
+  .achievement-toast-label{
+    font-size:calc(10px * var(--font-scale, 1)); letter-spacing:.1em; color:var(--bengara); opacity:.9;
+  }
+  
+  .achievement-toast-name{
+    font-family:var(--f-mincho); font-size:calc(15px * var(--font-scale, 1)); font-weight:600;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  
+  @media (max-width:600px){
+    .achievement-toast{ right:14px; top:calc(70px + env(safe-area-inset-top)); }
+  }
+  
+
+  @media print{
+    #siteHeader, footer, .bg-gradient, #fireworksCanvas,
+    .to-top, .site-search-panel, .settings-panel,
+    .bottom-sheet, .bottom-sheet-backdrop, .qr-modal, .qr-modal-backdrop,
+    .press-fill::before, .rain-ripples{
+      display:none !important;
+    }
+    *{ animation:none !important; transition:none !important; box-shadow:none !important; }
+    html, body{ background:#fff !important; }
+    body{ color:#000 !important; }
+    main{ padding-top:0 !important; }
+    section{ padding:24px 0 !important; page-break-inside:avoid; }
+    .wrap{ max-width:100% !important; padding:0 20px !important; }
+    h1, h2, h3, p, span{ color:#000 !important; text-shadow:none !important; }
+    a{ color:#000 !important; text-decoration:none !important; }
+    .sec-label{ writing-mode:horizontal-tb !important; }
+  }
+  
+  .nickname-note + .settings-row,
+  .nickname-edit-row + .settings-row{ margin-top:18px; }
+  
+
+  .login-area{ display:flex; align-items:center; }
+  
+  .login-btn{
+    display:flex; align-items:center; gap:8px; font-family:var(--f-gothic);
+    font-size:calc(12.5px * var(--font-scale, 1)); color:var(--sumi); background:var(--kinari);
+    border:1px solid var(--line); border-radius:20px; padding:7px 16px; cursor:pointer;
+    transition:border-color .3s ease;
+  }
+  
+  .login-btn:hover{ border-color:var(--bengara); }
+  
+  .login-btn[hidden]{ display:none; }
+  
+  .login-account{ display:flex; align-items:center; gap:8px; }
+  
+  .login-account[hidden]{ display:none; }
+  
+  .login-account img{ width:26px; height:26px; border-radius:50%; }
+  
+  .login-account span{ font-size:calc(12px * var(--font-scale, 1)); color:var(--sumi); max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  
+  /* Bookmarks:見たもの/実績 タブ */
+  .bookmark-tabs{ display:flex; gap:10px; padding:16px 24px 0; flex:none; }
+  
+  .bookmark-tab{
+    font-family:var(--f-gothic); font-size:calc(12.5px * var(--font-scale, 1)); letter-spacing:.04em;
+    color:var(--usuzumi); background:transparent; border:1px solid var(--line); border-radius:16px;
+    padding:6px 16px; cursor:pointer; transition:border-color .3s ease, color .3s ease, background .3s ease;
+  }
+  
+  .bookmark-tab.active{ background:var(--bengara); border-color:var(--bengara); color:var(--kinari); }
+  
+  .bookmark-panel{ overflow-y:auto; }
+  
+  .bookmark-panel[hidden]{ display:none; }
+  
+
+  /* 実績一覧 */
+  .achievements-login-note{ padding:24px; font-size:calc(13px * var(--font-scale, 1)); color:var(--usuzumi); }
+  
+  .achievements-login-note[hidden]{ display:none; }
+  
+  .achievements-list{ padding:16px 24px 32px; max-width:640px; }
+  
+  .achievements-list[hidden]{ display:none; }
+  
+  .achievements-toast-row{
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+    padding:0 24px 16px; font-size:calc(12.5px * var(--font-scale, 1)); color:var(--usuzumi);
+  }
+  
+  .achievements-toast-row[hidden]{ display:none; }
+  
+  .achievement-item{
+    padding:16px 0; border-bottom:1px solid var(--line);
+  }
+  
+  .achievement-item:first-child{ padding-top:0; }
+  
+  .achievement-item.locked{ opacity:.5; }
+  
+  .achievement-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; cursor:pointer; }
+  
+  .achievement-name{ display:flex; align-items:center; gap:8px; font-size:calc(14px * var(--font-scale, 1)); color:var(--sumi); }
+  
+  .achievement-name .tag-unique{
+    font-size:calc(9.5px * var(--font-scale, 1)); color:var(--bengara); border:1px solid var(--bengara);
+    border-radius:10px; padding:1px 7px; letter-spacing:.04em;
+  }
+  
+  .achievement-toggle{ font-size:14px; color:var(--usuzumi); transition:transform .25s ease; flex:none; }
+  
+  .achievement-item.expanded .achievement-toggle{ transform:rotate(45deg); }
+  
+  .achievement-desc{
+    max-height:0; overflow:hidden; transition:max-height .3s ease;
+    font-size:calc(12.5px * var(--font-scale, 1)); color:var(--usuzumi); line-height:1.8;
+  }
+  
+  .achievement-item.expanded .achievement-desc{ max-height:120px; margin-top:10px; }
+  
+  .achievement-set-title{
+    margin-top:10px; font-size:calc(11px * var(--font-scale, 1)); color:var(--bengara); background:none;
+    border:1px solid var(--bengara); border-radius:12px; padding:4px 12px; cursor:pointer;
+  }
+  
+  .achievement-set-title.current{ background:var(--bengara); color:var(--kinari); }
+  
+
+  /* ニックネームの横の称号バッジ */
+  .login-name-wrap{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+  
+  .title-badge{
+    font-size:calc(9.5px * var(--font-scale, 1)); color:var(--bengara); letter-spacing:.05em;
+  }
+  
+  .title-badge[hidden]{ display:none; }
+  
+  .title-badge.unique{
+    position:relative; display:inline-block; padding:1px 6px; border-radius:3px;
+    animation:title-glow 2.4s ease-in-out infinite;
+  }
+  
+  @keyframes title-glow{
+    0%, 100%{ text-shadow:0 0 3px rgba(163,68,48,.35), 0 0 1px rgba(163,68,48,.5); box-shadow:0 0 4px rgba(163,68,48,.15) inset; }
+    50%{ text-shadow:0 0 8px rgba(163,68,48,.75), 0 0 3px rgba(163,68,48,.9); box-shadow:0 0 10px rgba(163,68,48,.35) inset; }
+  }
+  
+  .title-badge.top-rank{ color:#C9971F; }
+  
+  @keyframes title-glow-gold{
+    0%, 100%{ text-shadow:0 0 3px rgba(201,151,31,.4), 0 0 1px rgba(201,151,31,.55); box-shadow:0 0 4px rgba(201,151,31,.18) inset; }
+    50%{ text-shadow:0 0 9px rgba(201,151,31,.85), 0 0 3px rgba(201,151,31,1); box-shadow:0 0 12px rgba(201,151,31,.4) inset; }
+  }
+  
+  .title-badge.top-rank.unique{ animation-name:title-glow-gold; }
+  
+
+  .login-signout{
+    background:none; border:none; color:var(--usuzumi); font-size:calc(11.5px * var(--font-scale, 1));
+    text-decoration:underline; text-underline-offset:2px; cursor:pointer; padding:2px;
+  }
+  
+  .login-edit-nickname{
+    display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px;
+    background:none; border:none; cursor:pointer; flex:none; padding:0;
+  }
+  
+  .login-edit-nickname svg{ width:13px; height:13px; stroke:var(--usuzumi); transition:stroke .25s ease; }
+  
+  .login-edit-nickname:hover svg{ stroke:var(--bengara); }
+  
+  .nickname-edit-row{
+    display:flex; gap:8px; align-items:center; margin-top:12px;
+  }
+  
+  .nickname-edit-row[hidden]{ display:none; }
+  
+  .nickname-edit-row input{
+    flex:1; min-width:0; font-family:var(--f-gothic); font-size:max(16px, calc(13px * var(--font-scale, 1))); color:var(--sumi);
+    background:var(--kinari); border:1px solid var(--line); border-radius:2px; padding:8px 10px;
+  }
+  
+  .nickname-edit-row .btn-line{ flex:none; white-space:nowrap; }
+  
+  .nickname-note{
+    margin-top:8px; font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi); line-height:1.7;
+  }
+  
+  .nickname-note[hidden]{ display:none; }
+  
+  .lang-toggle:hover{ border-color:var(--bengara); color:var(--bengara); transform:translateY(-2px); }
+  
+
+  .rain-ripples{
+    position:fixed; inset:0; width:100%; height:100%;
+    overflow:hidden; pointer-events:none; z-index:0; display:block;
+  }
+  
+  .ripple-pattern path, .ripple-pattern use{
+    fill:var(--washi-pattern-color);
+  }
+  
+
+  .faq-list{ max-width:720px; }
+  
+  .faq-item{
+    padding:26px 0; border-bottom:1px solid var(--line);
+  }
+  
+  .faq-item:first-child{ padding-top:0; }
+  
+  .faq-q{
+    font-family:var(--f-mincho); font-size:calc(17px * var(--font-scale, 1)); font-weight:600; color:var(--sumi);
+    margin-bottom:10px;
+  }
+  
+  .faq-a{ font-size:calc(14px * var(--font-scale, 1)); color:var(--usuzumi); line-height:1.95; }
+  
+
+  .to-top{
+    border:1px solid var(--line); border-radius:50%;
+    display:flex; align-items:center; justify-content:center; transition:var(--t-hover);
+    width:38px; height:38px;
+  }
+  
+  .to-top:hover{ border-color:var(--bengara); transform:translateY(-3px); }
+  
+  .presence-line{
+    display:flex; align-items:center; justify-content:center; gap:7px; margin-top:20px;
+    font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi); letter-spacing:.04em;
+  }
+  
+  .presence-line[hidden]{ display:none; }
+  
+  .presence-dot{
+    width:6px; height:6px; border-radius:50%; background:var(--bengara); flex:none;
+    animation:presence-breathe 2.6s ease-in-out infinite;
+  }
+  
+  @keyframes presence-breathe{
+    0%, 100%{ opacity:.4; transform:scale(.85); }
+    50%{ opacity:1; transform:scale(1.15); }
+  }
+  
+
+  /* ナビゲーションは、英語+日本語表記でテキスト量が増えたため、
+     通常のブレークポイント(860px)より広い画面幅から、先にハンバーガーメニューに切り替える。 */
+  @media (max-width:1180px){
+    nav{ position:fixed; top:0; right:0; height:100svh; width:74vw; max-width:320px;
+      background:var(--kinari); border-left:1px solid var(--kin); transform:translateX(100%); transition:transform .45s var(--ease-out), var(--t-bg);
+      display:flex; align-items:center; padding:0 40px calc(0px + env(safe-area-inset-bottom)) 40px; box-shadow:-18px 0 44px rgba(0,0,0,.18); z-index:150;
+    }
+    nav.open{ transform:translateX(0); }
+    nav ul{ flex-direction:column; gap:30px; }
+    nav a{ font-size:calc(16px * var(--font-scale, 1)); }
+    nav a .nav-jp{ font-size:0.82em; }
+    .menu-btn{ display:flex; }
+    .header-right{ gap:16px; }
+  }
+  
+  @media (max-width:620px){
+    section{ padding:90px 0; }
+  }
+  
+  @media (max-width:480px){
+    .wrap{ padding:0 5.5vw; }
+    header{ padding-left:5.5vw; padding-right:5.5vw; }
+    .sec-head{ margin-bottom:50px; flex-direction:column; gap:10px; }
+    .sec-label{ writing-mode:horizontal-tb; height:auto; border-right:0; border-bottom:1px solid var(--line); padding:0 0 8px; letter-spacing:.34em; font-size:calc(11px * var(--font-scale, 1)); }
+    .foot-row{ justify-content:center; text-align:center; }
+    section{ padding:72px 0; }
+    .theme-toggle{ width:34px; height:34px; }
+  }
+  
+  /* 画像URLの取得方法ガイド */
+  .fanart-howto{
+    max-width:520px; margin-bottom:24px; padding:18px 22px; background:var(--kinari-2);
+    border-radius:4px; border:1px solid var(--line); font-size:calc(13px * var(--font-scale, 1));
+  }
+  
+  .fanart-howto summary{
+    cursor:pointer; color:var(--bengara); font-family:var(--f-gothic); letter-spacing:.04em;
+    list-style:none; display:flex; align-items:center; gap:8px;
+  }
+  
+  .fanart-howto summary::-webkit-details-marker{ display:none; }
+  
+  .fanart-howto summary::before{
+    content:'+'; display:inline-block; width:16px; text-align:center; transition:transform .25s ease;
+  }
+  
+  .fanart-howto[open] summary::before{ transform:rotate(45deg); }
+  
+  .fanart-howto ol{
+    margin:16px 0 12px; padding-left:1.4em; color:var(--sumi); line-height:1.9;
+  }
+  
+  .fanart-howto ol li{ margin-bottom:6px; }
+  
+  .fanart-howto-note{
+    color:var(--usuzumi); font-size:calc(12px * var(--font-scale, 1)); line-height:1.8; margin-top:8px;
+  }
+  
+  /* ファンアート投稿フォーム */
+  .fanart-form{
+    max-width:520px; margin-bottom:70px; padding:28px; background:var(--kinari-2);
+    border-radius:4px; border:1px solid var(--line);
+  }
+  
+  .fanart-field{ margin-bottom:18px; }
+  
+  .fanart-field label{
+    display:block; font-size:calc(12px * var(--font-scale, 1)); letter-spacing:.06em; color:var(--usuzumi); margin-bottom:6px;
+  }
+  
+  .fanart-field input{
+    width:100%; font-family:var(--f-gothic); font-size:max(16px, calc(15px * var(--font-scale, 1))); color:var(--sumi);
+    background:var(--kinari); border:1px solid var(--line); border-radius:2px;
+    padding:10px 12px; transition:border-color .3s ease;
+  }
+  
+  .fanart-field input:focus{ outline:none; border-color:var(--bengara); }
+  
+  .fanart-preview{
+    margin-top:10px; width:140px; aspect-ratio:4/5; border-radius:2px; overflow:hidden;
+    border:1px solid var(--line); background:var(--kinari);
+  }
+  
+  .fanart-preview img{ width:100%; height:100%; object-fit:cover; }
+  
+  .fanart-preview-error{
+    margin-top:8px; font-size:calc(12px * var(--font-scale, 1)); color:var(--bengara);
+  }
+  
+  .fanart-submit-btn{
+    display:inline-flex; align-items:center; gap:12px; background:none; cursor:pointer;
+    font-family:var(--f-mincho);
+  }
+  
+  .fanart-submit-btn:disabled{ opacity:.5; cursor:default; }
+  
+  .fanart-form-note{
+    margin-top:16px; font-size:calc(11.5px * var(--font-scale, 1)); color:var(--usuzumi); line-height:1.7;
+  }
+  
+  .fanart-form-error{
+    margin-top:12px; font-size:calc(12px * var(--font-scale, 1)); color:var(--bengara); display:none;
+  }
+  
+  .fanart-form-error.show{ display:block; }
+  
+  .fanart-r18-check{
+    display:flex; align-items:center; gap:8px; margin-bottom:20px; cursor:pointer;
+    font-size:calc(12.5px * var(--font-scale, 1)); color:var(--usuzumi);
+  }
+  
+  .fanart-r18-check input{ accent-color:var(--bengara); width:16px; height:16px; cursor:pointer; }
+  
+
+  /* 通常 / R18 タブ */
+  .fanart-tabs{ display:flex; gap:10px; margin-bottom:32px; }
+  
+  .fanart-tab{
+    font-family:var(--f-gothic); font-size:calc(13px * var(--font-scale, 1)); letter-spacing:.06em;
+    color:var(--usuzumi); background:transparent; border:1px solid var(--line); border-radius:20px;
+    padding:8px 22px; cursor:pointer; transition:border-color .3s ease, color .3s ease, background .3s ease;
+  }
+  
+  .fanart-tab:hover{ border-color:var(--bengara); color:var(--bengara); }
+  
+  .fanart-tab.active{ background:var(--bengara); border-color:var(--bengara); color:var(--kinari); }
+  
+
+  /* R18 年齢確認 */
+  .fanart-age-gate{
+    position:fixed; inset:0; z-index:400; display:flex; align-items:center; justify-content:center;
+    background:rgba(20,16,14,.92); padding:6vw;
+  }
+  
+  .fanart-age-gate[hidden]{ display:none; }
+  
+  .fanart-age-gate-inner{
+    max-width:460px; width:100%; background:var(--kinari); border-radius:4px; padding:44px 38px;
+    box-shadow:var(--lb-shadow); text-align:center; position:relative; overflow:hidden;
+  }
+  
+  .fanart-age-gate-inner::before{
+    content:''; position:absolute; inset:0; opacity:.16; pointer-events:none;
+    background-image:url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 14'><path fill='%23A34430' fill-opacity='0.7' d='M-4-7v28h16v-28z'/><path fill='%23A34430' d='m4 0 8 14h-16zm4 7h-8l4 7z'/></svg>");
+    background-size:34px 60px; background-repeat:repeat;
+  }
+  
+  .fanart-age-gate-title, .fanart-age-gate-inner p, .fanart-age-gate-buttons{
+    position:relative; z-index:1;
+  }
+  
+  .fanart-age-gate-title{
+    font-family:var(--f-mincho); font-size:calc(20px * var(--font-scale, 1)); font-weight:600;
+    color:var(--bengara); margin-bottom:18px;
+  }
+  
+  .fanart-age-gate-inner p:not(.fanart-age-gate-title){
+    font-size:calc(15.5px * var(--font-scale, 1)); color:var(--sumi); line-height:1.9; margin-bottom:30px;
+  }
+  
+  .fanart-age-gate-buttons{ display:flex; flex-direction:row; gap:14px; justify-content:center; }
+  
+  .fanart-age-gate-yes{
+    flex:1; font-family:var(--f-gothic); font-size:calc(15px * var(--font-scale, 1)); letter-spacing:.03em;
+    color:var(--sumi); background:var(--kinari); border:1px solid var(--line); border-radius:4px;
+    padding:14px 12px; cursor:pointer;
+  }
+  
+  .fanart-age-gate-no{
+    flex:1; font-family:var(--f-gothic); font-size:calc(15px * var(--font-scale, 1)); letter-spacing:.03em;
+    background:none; border:1px solid var(--line); border-radius:4px; color:var(--usuzumi);
+    cursor:pointer; padding:14px 12px;
+  }
+  
+
+  /* ファンアート一覧 */
+  .fanart-grid{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:26px;
+  }
+  
+  .fanart-card{ cursor:pointer; }
+  
+  .fanart-card.fanart-broken{ display:none; }
+  
+  .fanart-thumb{
+    position:relative; aspect-ratio:4/5; border-radius:2px; overflow:hidden;
+    border:1px solid var(--line); background:var(--kinari-2); box-shadow:var(--paper-shadow);
+  }
+  
+  .fanart-thumb img{ width:100%; height:100%; object-fit:cover; }
+  
+  .lb-img-broken-msg{
+    display:flex; align-items:center; justify-content:center; width:100%; height:100%;
+    background:var(--kinari-2); color:var(--usuzumi); font-size:calc(13px * var(--font-scale, 1));
+    text-align:center; padding:20px;
+  }
+  
+  .fanart-play-badge{
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:44px; height:44px; border-radius:50%; background:rgba(20,16,14,.6);
+    color:var(--kinari); display:flex; align-items:center; justify-content:center;
+    font-size:16px; pointer-events:none;
+  }
+  
+  .fanart-caption{
+    display:flex; justify-content:space-between; align-items:baseline; margin-top:12px; gap:8px;
+  }
+  
+  .fanart-caption-name{ font-family:var(--f-mincho); font-size:calc(14px * var(--font-scale, 1)); }
+  
+  .fanart-caption-meta{
+    display:flex; align-items:center; gap:10px; flex:none;
+    font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi); white-space:nowrap;
+  }
+  
+  .fanart-mini-like{ display:flex; align-items:center; gap:3px; }
+  
+  .fanart-mini-like svg{ width:12px; height:12px; stroke:var(--bengara); fill:none; }
+  
+  .fanart-loading, .fanart-empty{
+    text-align:center; color:var(--usuzumi); font-size:calc(13px * var(--font-scale, 1)); padding:40px 0;
+  }
+  
+  @media (max-width:860px){
+    .fanart-grid{ grid-template-columns:repeat(2,1fr); gap:20px; }
+  }
+  
+  @media (max-width:480px){
+    .fanart-grid{ gap:16px; }
+    .fanart-form{ padding:22px; }
+  }
+  
+
+  /* ライトボックス(作品ページと共通の見た目) */
+  .lightbox{
+    position:fixed; inset:0; z-index:300; display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,0.88); opacity:0; pointer-events:none; transition:opacity .35s ease;
+    padding:6vw;
+  }
+  
+  .lightbox.open{ opacity:1; pointer-events:auto; }
+  
+  .lb-inner{
+    background:var(--kinari); max-width:760px; width:100%; display:grid; grid-template-columns:1fr 1fr;
+    box-shadow:var(--lb-shadow); transform:translateY(20px); transition:transform .4s ease, var(--t-bg);
+    max-height:88vh; max-height:88dvh; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch;
+    position:relative;
+  }
+  
+  .lightbox.open .lb-inner{ transform:translateY(0); }
+  
+  .lb-img{ aspect-ratio:4/5; position:relative; overflow:hidden; align-self:start; background:var(--kinari-2); }
+  
+  .lb-img img{ width:100%; height:100%; object-fit:cover; }
+  
+  .lb-text{
+    padding:44px 38px; display:flex; flex-direction:column; justify-content:center; overflow-x:hidden;
+  }
+  
+  .lb-text h3{ font-size:calc(22px * var(--font-scale, 1)); margin-bottom:10px; }
+  
+  .lb-text .meta{ font-size:calc(12px * var(--font-scale, 1)); color:var(--usuzumi); letter-spacing:.08em; margin-bottom:20px; }
+  
+  .fanart-lb-actions{ display:flex; align-items:center; gap:10px; margin-bottom:24px; }
+  
+  .fanart-like-btn{
+    display:inline-flex; align-items:center; gap:8px; background:none; border:1px solid var(--line);
+    border-radius:20px; padding:8px 18px; cursor:pointer; align-self:flex-start;
+    transition:border-color .3s ease, background .3s ease;
+  }
+  
+  .fanart-like-btn svg{ width:16px; height:16px; stroke:var(--bengara); fill:none; transition:fill .25s ease; }
+  
+  .fanart-like-btn:hover{ border-color:var(--bengara); }
+  
+  .fanart-like-btn.liked svg{ fill:var(--bengara); }
+  
+  .fanart-like-btn span{ font-size:calc(13px * var(--font-scale, 1)); color:var(--sumi); }
+  
+  .fanart-delete-btn{
+    display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px;
+    background:none; border:1px solid var(--line); border-radius:50%; cursor:pointer;
+    transition:border-color .3s ease;
+  }
+  
+  .fanart-delete-btn[hidden]{ display:none; }
+  
+  .fanart-delete-btn:hover{ border-color:var(--bengara); }
+  
+  .fanart-delete-btn svg{ width:14px; height:14px; stroke:var(--usuzumi); }
+  
+  .fanart-fav-btn{
+    display:inline-flex; align-items:center; justify-content:center; width:34px; height:34px;
+    background:none; border:1px solid var(--line); border-radius:50%; cursor:pointer;
+    transition:border-color .3s ease;
+  }
+  
+  .fanart-fav-btn:hover{ border-color:var(--bengara); }
+  
+  .fanart-fav-btn svg{ width:15px; height:15px; stroke:var(--bengara); fill:none; transition:fill .25s ease; }
+  
+  .fanart-fav-btn.active svg{ fill:var(--bengara); }
+  
+  .fanart-card-fav{
+    position:absolute; top:8px; right:8px; width:26px; height:26px; border-radius:50%;
+    background:rgba(20,16,14,.55); display:flex; align-items:center; justify-content:center;
+    opacity:0; transition:opacity .2s ease;
+  }
+  
+  .fanart-card-fav.active{ opacity:1; }
+  
+  .fanart-card-fav svg{ width:12px; height:12px; stroke:var(--kinari); fill:none; }
+  
+  .fanart-card-fav.active svg{ fill:var(--bengara); stroke:var(--bengara); }
+  
+  .lb-comments{ margin-top:1px; padding-top:24px; border-top:1px solid var(--line); }
+  
+  .lb-comments-label{
+    font-family:var(--f-mincho); font-size:calc(13px * var(--font-scale, 1)); letter-spacing:.1em;
+    color:var(--usuzumi); margin-bottom:14px;
+  }
+  
+  .lb-close{
+    position:absolute; top:-16px; right:-16px; width:38px; height:38px;
+    background:var(--sumi); border:1px solid var(--kinari);
+    border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer;
+    transition:background .3s;
+  }
+  
+  .lb-close:hover{ background:var(--bengara); }
+  
+  .lb-close svg{ width:14px; height:14px; stroke:var(--kinari); }
+  
+  @media (max-width:860px){
+    .lb-inner{ grid-template-columns:1fr; max-height:88vh; max-height:88dvh; overflow:auto; }
+    .lb-close{ top:14px; right:14px; background:rgba(20,16,14,.65); border-color:rgba(246,241,230,.6); }
+  }
+</style>
+</head>
+<body>
+<script>
+  // 同じブラウザであれば、以前選んだダーク/ライトの状態を引き継ぐ。
+  try{
+    const savedTheme = localStorage.getItem('site-theme');
+    document.documentElement.setAttribute('data-site-theme', savedTheme === 'dark' ? 'dark' : 'light');
+  }catch(e){
+    document.documentElement.setAttribute('data-site-theme', 'light');
+  }
+</script>
+
+<header id="siteHeader">
+  <a href="index.html" class="logo"></a>
+  <div class="header-right">
+    <nav id="mainNav">
+      <ul>
+        <li><a href="index.html#top">Home<span class="nav-jp">-ホーム-</span></a></li>
+        <li class="nav-has-children">
+          <a href="#" id="navArts">Arts<span class="nav-jp">-作品-</span> <span class="nav-arts-arrow" aria-hidden="true">▾</span></a>
+          <ul class="nav-submenu">
+            <li><a href="index.html#works">Illustration<span class="nav-jp">-イラスト-</span></a></li>
+            <li><a href="music.html">Music<span class="nav-jp">-音楽-</span></a></li>
+            <li><a href="novel.html">Novel<span class="nav-jp">-小説-</span></a></li>
+            <li><a href="movie.html">Movie<span class="nav-jp">-映像-</span></a></li>
+          </ul>
+        </li>
+        <li><a href="index.html#profile">Profile<span class="nav-jp">-経歴-</span></a></li>
+        <li><a href="index.html#contact">Contact<span class="nav-jp">-連絡先-</span></a></li>
+        <li><a href="faq.html">FAQ<span class="nav-jp">-よくある質問-</span></a></li>
+        <li><a href="fanart.html" aria-current="page">Fan Art<span class="nav-jp">-ファンアート-</span></a></li>
+        <li><a href="guidelines.html">Guidelines<span class="nav-jp">-ガイドライン-</span></a></li>
+        <li><a href="#" id="navRewatch">Bookmarks<span class="nav-jp">-しおり-</span></a></li>
+        <li><a href="#" id="navQr">QR Code<span class="nav-jp">-二次元コード-</span></a></li>
+      </ul>
+    </nav>
+    <button class="icon-btn site-search-toggle press-fill" id="siteSearchToggle" aria-label="サイト内検索を開く" aria-expanded="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    </button>
+    <button class="icon-btn theme-toggle press-fill" id="themeToggle" aria-label="ダークモードに切り替え" aria-pressed="false">
+      <span class="tt-icon tt-sun" aria-hidden="true">日</span>
+      <span class="tt-icon tt-moon" aria-hidden="true">月</span>
+    </button>
+    <button class="icon-btn settings-toggle press-fill" id="settingsToggle" aria-label="設定を開く" aria-expanded="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+    <button class="menu-btn" id="menuBtn" aria-label="メニューを開く" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+  <div class="settings-panel" id="settingsPanel" hidden>
+    <div class="settings-row" id="loginRow">
+      <span class="settings-row-label">ログイン</span>
+      <div class="login-area" id="loginArea">
+        <button type="button" class="login-btn" id="loginBtn">
+          <svg viewBox="0 0 48 48" width="16" height="16"><path fill="#4285F4" d="M45.12 24.5c0-1.56-.14-3.06-.4-4.5H24v8.51h11.84c-.51 2.75-2.06 5.08-4.39 6.64v5.52h7.11c4.16-3.83 6.56-9.47 6.56-16.17z"/><path fill="#34A853" d="M24 46c5.94 0 10.92-1.97 14.56-5.33l-7.11-5.52c-1.97 1.32-4.49 2.1-7.45 2.1-5.73 0-10.58-3.87-12.31-9.07H4.34v5.7C7.96 41.07 15.4 46 24 46z"/><path fill="#FBBC05" d="M11.69 28.18C11.25 26.86 11 25.45 11 24s.25-2.86.69-4.18v-5.7H4.34C2.85 17.09 2 20.45 2 24s.85 6.91 2.34 9.88l7.35-5.7z"/><path fill="#EA4335" d="M24 10.75c3.23 0 6.13 1.11 8.41 3.29l6.31-6.31C34.91 4.18 29.93 2 24 2 15.4 2 7.96 6.93 4.34 14.12l7.35 5.7c1.73-5.2 6.58-9.07 12.31-9.07z"/></svg>
+          <span class="i18n" data-en="Sign in with Google">Googleでログイン</span>
+        </button>
+        <div class="login-account" id="loginAccount" hidden>
+          <img id="loginAvatar" alt="" referrerpolicy="no-referrer">
+          <span class="login-name-wrap">
+            <span class="title-badge" id="titleBadge" hidden></span>
+            <span id="loginName"></span>
+          </span>
+          <button type="button" class="login-edit-nickname" id="editNicknameBtn" aria-label="ニックネームを編集" title="ニックネームを編集">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          </button>
+          <button type="button" class="login-signout" id="logoutBtn">
+            <span class="i18n" data-en="Sign out">ログアウト</span>
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="nickname-edit-row" id="nicknameEditRow" hidden>
+      <input type="text" id="nicknameInput" maxlength="20" placeholder="サイト内での表示名(ニックネーム)">
+      <button type="button" class="btn-line press-fill" id="nicknameSaveBtn"><span>保存</span></button>
+    </div>
+    <p class="nickname-note i18n" data-en="Set a nickname to use on this site instead of your Google account name — for comments, fan art posts, etc." id="nicknameNote" hidden>
+      Googleアカウントの名前の代わりに、このサイト内で使う名前を設定できます(コメントやファンアート投稿時などに使われます)。
+    </p>
+    <div class="settings-row">
+      <span class="settings-row-label">言語 / Language</span>
+      <button class="lang-toggle" id="langToggle" aria-label="Switch to English" data-lang="ja">English</button>
+    </div>
+    <div class="settings-row settings-row-column">
+      <label for="fontSizeSlider" class="settings-row-label">文字の大きさ</label>
+      <input type="range" id="fontSizeSlider" min="80" max="150" step="5" value="100" aria-label="文字の大きさを調整">
+    </div>
+    <div class="settings-row">
+      <span class="settings-row-label">実績の通知</span>
+      <button class="simple-toggle" id="achievementToastToggle" aria-pressed="true" aria-label="実績解除の通知を切り替え">
+        <span class="simple-toggle-knob"></span>
+      </button>
+    </div>
+    <div class="settings-row">
+      <span class="settings-row-label">BGM</span>
+      <button class="bgm-toggle" id="bgmToggle" aria-label="BGMを再生" aria-pressed="false">
+        <svg class="bgm-icon-play" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14l11-7z"/></svg>
+        <svg class="bgm-icon-pause" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M7 5v14M17 5v14"/></svg>
+      </button>
+    </div>
+    <audio id="bgmAudio" loop preload="none">
+      <!-- 実際のBGMファイルが用意できたら、下記のsrcを差し替えてください -->
+      <source src="REPLACE_WITH_YOUR_BGM_FILE.mp3" type="audio/mpeg">
+    </audio>
+  </div>
+  <div class="site-search-panel" id="siteSearchPanel" hidden>
+    <input type="search" id="siteSearchInput" class="site-search-input" placeholder="サイト内を検索..." aria-label="サイト内検索">
+    <ul class="site-search-results" id="siteSearchResults"></ul>
+    <p class="site-search-empty" id="siteSearchEmpty" hidden>一致する内容が見つかりませんでした。</p>
+  </div>
+</header>
+
+<svg class="rain-ripples" id="rainRipples" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <path id="seigaihaUnit" d="M0 0a55 55 0 0 1 93.99 0 60 60 0 0 0-9.89 3.114 45 45 0 0 0-74.21 0 60 60 0 0 0-9.89-3.114zm14.499 5.249a40 40 0 0 1 64.992 0 60 60 0 0 0-8.496 5.325 30 30 0 0 0-48 0 60 60 0 0 0-8.496-5.325zm12.371 8.493a25 25 0 0 1 40.25 0 60 60 0 0 0-7.063 7.458 15 15 0 0 0-26.124 0 60 60 0 0 0-7.063-7.458zm10.477 12.202a10 10 0 0 1 19.296 0 60 60 0 0 0-1.897 3.133 60 60 0 0 0-15.502 0 60 60 0 0 0-1.897-3.133z"/>
+    <pattern id="ripplePatternSeigaiha" class="ripple-pattern" width="72" height="36" patternUnits="userSpaceOnUse" viewBox="0 0 120 60">
+      <use href="#seigaihaUnit" x="13.005" y="31.426"/>
+      <use href="#seigaihaUnit" x="-46.995" y="1.426"/>
+      <use href="#seigaihaUnit" x="73.005" y="1.426"/>
+      <use href="#seigaihaUnit" x="-46.995" y="61.426"/>
+      <use href="#seigaihaUnit" x="73.005" y="61.426"/>
+      <use href="#seigaihaUnit" x="13.005" y="-28.574"/>
+    </pattern>
+    <pattern id="ripplePatternUroko" width="34" height="60" patternUnits="userSpaceOnUse" viewBox="0 0 8 14" preserveAspectRatio="none">
+      <path fill="var(--washi-pattern-color)" fill-opacity="0.55" d="M-4-7v28h16v-28z"/>
+      <path fill="var(--washi-pattern-color)" d="m4 0 8 14h-16zm4 7h-8l4 7z"/>
+    </pattern>
+  </defs>
+</svg>
+
+<div class="bg-gradient" aria-hidden="true"></div>
+<canvas id="fireworksCanvas" aria-hidden="true"></canvas>
+
+<div class="bottom-sheet-backdrop" id="rewatchBackdrop" hidden></div>
+<div class="bottom-sheet" id="rewatchSheet" hidden aria-label="ブックマーク">
+  <div class="bottom-sheet-handle"></div>
+  <div class="bottom-sheet-head">
+    <h3>Bookmarks</h3>
+    <button type="button" class="bottom-sheet-close" id="rewatchClose" aria-label="閉じる">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l16 16M20 4L4 20"/></svg>
+    </button>
+  </div>
+  <div class="bookmark-tabs">
+    <button type="button" class="bookmark-tab active" data-bmtab="viewed">見たもの一覧</button>
+    <button type="button" class="bookmark-tab" data-bmtab="achievements">実績一覧</button>
+  </div>
+
+  <div class="bookmark-panel" id="bookmarkViewedPanel">
+    <div class="rewatch-list" id="rewatchList"></div>
+    <p class="rewatch-empty" id="rewatchEmpty" hidden>まだ閲覧した作品がありません。</p>
+  </div>
+
+  <div class="bookmark-panel" id="bookmarkAchievementsPanel" hidden>
+    <p class="achievements-login-note" id="achievementsLoginNote">実績は、ログインするとご利用いただけます。</p>
+    <div class="achievements-toast-row" id="achievementsToastRow" hidden>
+      <span>実績の通知</span>
+      <button class="simple-toggle" id="achievementToastToggle2" aria-pressed="true" aria-label="実績解除の通知を切り替え">
+        <span class="simple-toggle-knob"></span>
+      </button>
+    </div>
+    <div class="achievements-list" id="achievementsList" hidden></div>
+  </div>
+</div>
+
+<div class="achievement-toast" id="achievementToast" hidden>
+  <span class="achievement-toast-icon">🏆</span>
+  <span class="achievement-toast-text">
+    <span class="achievement-toast-label">実績解除</span>
+    <span class="achievement-toast-name" id="achievementToastName"></span>
+  </span>
+</div>
+
+<div class="qr-modal-backdrop" id="qrBackdrop" hidden></div>
+<div class="qr-modal" id="qrModal" hidden aria-label="QRコード">
+  <button type="button" class="bottom-sheet-close" id="qrClose" aria-label="閉じる">
+    <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l16 16M20 4L4 20"/></svg>
+  </button>
+  <p class="qr-modal-label">このサイトのQRコード</p>
+  <img id="qrImage" alt="サイトのQRコード" width="220" height="220">
+  <p class="qr-modal-url" id="qrUrlText"></p>
+</div>
+
+<main id="topAnchor">
+  <section id="fanart" style="padding-top:170px;">
+    <div class="wrap">
+      <div class="sec-head reveal">
+        <div class="sec-label i18n" data-en="Fan Art">フ ァ ン ア ー ト</div>
+        <div>
+          <h2 class="i18n" data-en="Fan Art">ファンアート</h2>
+          <p class="i18n" data-en="Please share your fan art. Paste a direct image link (not a post link) to submit.">みなさんが描いてくださったファンアートを紹介しています。Xなどに投稿された画像のURLを貼り付けてください。</p>
+        </div>
+      </div>
+
+      <details class="fanart-howto reveal">
+        <summary class="i18n" data-en="How to get the image URL (especially from X)">画像URLの取得方法(主にXの場合)</summary>
+        <ol>
+          <li class="i18n" data-en="Post your fan art on X (Twitter) as usual.">いつも通り、Xにファンアートを投稿してください。</li>
+          <li class="i18n" data-en="Open that post, and tap/click on the image itself to view it larger.">その投稿を開き、画像そのものをタップ(クリック)して、拡大表示にします。</li>
+          <li class="i18n" data-en="Long-press (or right-click) the enlarged image, and choose “Copy Image Address” / “画像アドレスをコピー”.">拡大された画像を長押し(パソコンの場合は右クリック)し、「画像アドレスをコピー」を選んでください。</li>
+          <li class="i18n" data-en="Paste that copied address into the “Image URL” field below.">コピーしたアドレスを、下の「画像のURL」欄に貼り付けてください。</li>
+        </ol>
+        <p class="fanart-howto-note i18n" data-en="Note: pasting the post's own URL (e.g. https://x.com/.../status/...) will not work — it must be the direct image address.">
+          ※ 投稿ページそのもののURL(例:https://x.com/…/status/…)を貼り付けても、正しく表示されません。必ず「画像そのもの」のアドレスをお使いください。
+        </p>
+        <p class="fanart-howto-note i18n" data-en="X is not required — any site where you can copy a direct image address will work.">
+          ※ Xに限らず、画像アドレスを直接コピーできるサイトであれば、どこの画像でも投稿いただけます。
+        </p>
+        <p class="fanart-howto-note i18n" data-en="Videos: YouTube links are also supported (e.g. https://www.youtube.com/watch?v=xxxxxxxxxxx or https://youtu.be/xxxxxxxxxxx), as well as direct video file links (ending in .mp4 / .webm / .mov). Video links from X (Twitter) posts are not currently supported.">
+          ※ 動画について:YouTubeのURL(例:https://www.youtube.com/watch?v=xxxxxxxxxxx や https://youtu.be/xxxxxxxxxxx)や、直接の動画ファイルのURL(.mp4 / .webm / .mov で終わるもの)にも対応しています。**Xの投稿内の動画URLには、現時点で対応していません。**
+        </p>
+      </details>
+
+      <form id="fanartForm" class="fanart-form">
+        <div class="fanart-field">
+          <label for="fanartUrl" class="i18n" data-en="Image or Video URL">画像・動画のURL</label>
+          <input type="url" id="fanartUrl" placeholder="https://..." required inputmode="url">
+          <div class="fanart-preview" id="fanartPreview" hidden>
+            <img id="fanartPreviewImg" alt="プレビュー">
+          </div>
+          <p class="fanart-preview-error i18n" data-en="This image couldn't be loaded. Please check the URL." id="fanartPreviewError" hidden>
+            この画像を読み込めませんでした。URLをご確認ください。
+          </p>
+        </div>
+        <div class="fanart-field">
+          <label for="fanartName" class="i18n" data-en="Your name (optional)">お名前・ハンドルネーム(任意)</label>
+          <input type="text" id="fanartName" maxlength="40" placeholder="名無しさん">
+        </div>
+        <label class="fanart-r18-check">
+          <input type="checkbox" id="fanartIsR18">
+          <span class="i18n" data-en="This work is R18 (adult content)">この作品はR18(成人向け)指定です</span>
+        </label>
+        <button type="submit" class="btn-line fanart-submit-btn" id="fanartSubmitBtn">
+          <span class="i18n" data-en="Submit">投稿する</span>
+        </button>
+        <p class="fanart-form-note i18n" data-en="Submitted images are displayed immediately. Please be respectful of the artist and other viewers." id="fanartFormNote">
+          投稿された画像は、確認なしにすぐ公開されます。他の方が気持ちよく見られる内容でお願いします。
+        </p>
+      </form>
+
+      <div class="fanart-tabs" role="tablist">
+        <button type="button" class="fanart-tab active" id="fanartTabNormal" role="tab" aria-selected="true">
+          <span class="i18n" data-en="All Ages">通常</span>
+        </button>
+        <button type="button" class="fanart-tab" id="fanartTabR18" role="tab" aria-selected="false">
+          <span class="i18n" data-en="R18">R18</span>
+        </button>
+      </div>
+
+      <div class="fanart-grid" id="fanartGrid"></div>
+      <p class="fanart-empty i18n" data-en="No fan art has been posted yet." id="fanartEmpty" hidden>まだ投稿がありません。</p>
+      <p class="fanart-loading i18n" data-en="Loading..." id="fanartLoading">読み込み中…</p>
+    </div>
+
+    <div class="fanart-age-gate" id="fanartAgeGate" hidden>
+      <div class="fanart-age-gate-inner">
+        <p class="fanart-age-gate-title i18n" data-en="R18 Content Warning">R18作品の閲覧について</p>
+        <p class="i18n" data-en="This section contains adult content intended for viewers aged 18 and over. Are you 18 years of age or older?">
+          この区画には、18歳以上を対象とした成人向けの作品が含まれます。あなたは18歳以上ですか?
+        </p>
+        <div class="fanart-age-gate-buttons">
+          <button type="button" class="fanart-age-gate-yes press-fill" id="fanartAgeYes">
+            <span class="i18n" data-en="Yes, I am 18 or older">はい、18歳以上です</span>
+          </button>
+          <button type="button" class="fanart-age-gate-no press-fill" id="fanartAgeNo">
+            <span class="i18n" data-en="No / Go back">いいえ・戻る</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="lightbox" id="fanartLightbox">
+  <div class="lb-inner">
+    <div class="lb-img" id="fanartLbImg"></div>
+    <div class="lb-text">
+      <h3 id="fanartLbName"></h3>
+      <p class="meta" id="fanartLbMeta"></p>
+      <div class="fanart-lb-actions">
+        <button type="button" class="fanart-like-btn" id="fanartLikeBtn" aria-label="いいね">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7.5-4.5-9.5-9C.9 8.1 2.4 5 5.6 4.4c2-.4 3.9.5 5 2.1 1.1-1.6 3-2.5 5-2.1C18.9 5 20.4 8.1 18.8 12c-2 4.5-9.5 9-9.5 9z"/></svg>
+          <span id="fanartLikeCount">0</span>
+        </button>
+        <button type="button" class="fanart-fav-btn" id="fanartFavBtn" aria-label="お気に入りに追加" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg>
+        </button>
+        <button type="button" class="fanart-delete-btn" id="fanartDeleteBtn" aria-label="自分の投稿を削除" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16z"/></svg>
+        </button>
+      </div>
+      <div class="lb-comments">
+        <p class="lb-comments-label i18n" data-en="Comments">感想・コメント</p>
+        <div id="fanartDiscussThread"></div>
+      </div>
+    </div>
+    <div class="lb-close" id="fanartLbClose"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l16 16M20 4L4 20"/></svg></div>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-row">
+      <a href="index.html" class="foot-logo"></a>
+      <ul class="foot-nav">
+        <li><a href="index.html#works">Works</a></li>
+        <li><a href="index.html#profile">Profile<span class="nav-jp">-経歴-</span></a></li>
+        <li><a href="index.html#contact">Contact<span class="nav-jp">-連絡先-</span></a></li>
+      </ul>
+      <a href="#topAnchor" class="to-top" aria-label="ページの先頭へ">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+      </a>
+    </div>
+    <p class="presence-line" id="presenceLine" hidden><span class="presence-dot"></span><span id="presenceText"></span></p>
+    <p class="foot-copy">&copy; <span id="year"></span> 鴛照昧琉. All rights reserved.</p>
+  </div>
+</footer>
+
+<script>
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let applyTheme = function(){};
+  function isDarkTheme(){ return document.documentElement.getAttribute('data-site-theme') === 'dark'; }
+
+  function bindPanelToggle(toggleBtn, panel, onOpen, onClose){
+    function open(){
+      panel.hidden = false;
+      toggleBtn.classList.add('active');
+      toggleBtn.setAttribute('aria-expanded', 'true');
+      if(onOpen) onOpen();
+    }
+    function close(){
+      panel.hidden = true;
+      toggleBtn.classList.remove('active');
+      toggleBtn.setAttribute('aria-expanded', 'false');
+      if(onClose) onClose();
+    }
+    toggleBtn.addEventListener('click', ()=> panel.hidden ? open() : close());
+    document.addEventListener('keydown', e=>{ if(e.key === 'Escape' && !panel.hidden) close(); });
+    document.addEventListener('click', e=>{
+      if(!panel.hidden && !panel.contains(e.target) && e.target !== toggleBtn && !toggleBtn.contains(e.target)) close();
+    });
+    return { open, close };
+  }
+
+  function bindSheetModal(backdrop, sheet, closeDelay, onOpen){
+    function open(){
+      if(onOpen) onOpen();
+      backdrop.hidden = false;
+      sheet.hidden = false;
+      requestAnimationFrame(()=>{ backdrop.classList.add('open'); sheet.classList.add('open'); });
+    }
+    function close(){
+      backdrop.classList.remove('open');
+      sheet.classList.remove('open');
+      setTimeout(()=>{ backdrop.hidden = true; sheet.hidden = true; }, closeDelay);
+    }
+    backdrop.addEventListener('click', close);
+    document.addEventListener('keydown', e=>{ if(e.key === 'Escape' && sheet.classList.contains('open')) close(); });
+    return { open, close };
+  }
+  var siteLang = 'ja';
+  function isEnglish(){ return typeof siteLang !== 'undefined' && siteLang === 'en'; }
+
+  try{
+  const LOGO_SVG = '<svg class="logo-char" viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="18.5" stroke="var(--ai)" stroke-width="1"/><path class="lm-stroke" d="M9.5,13.375 A3.5,3.5 0 0 1 16.5,13.375 L16.5,18.625 A3.5,3.5 0 0 1 9.5,18.625 Z" stroke="#D7003A"/><path class="lm-stroke" d="M9.5,16 L16.5,16" stroke="#1C1C1C"/><path class="lm-stroke" d="M25.13,8 C24.38,10.42 22.5,12.97 20.25,15.21" stroke="#0047AB"/><path class="lm-stroke" d="M21,8 L28.25,8 Q29.25,8 29.06,8.83 L28.05,13.19 C27.75,14.46 27.05,15.31 26.75,14.63" stroke="#D7003A"/><path class="lm-stroke" d="M20.5,20 A3.5,3.5 0 0 1 27.5,20 A3.5,3.5 0 0 1 20.5,20 Z" stroke="#1C1C1C"/><path class="lm-stroke" d="M11.5,26 C11.3,27.5 10.3,29 9,30.5" stroke="#0047AB"/><path class="lm-stroke" d="M17.17,26 C17.37,27.5 17.77,29 18.37,30.5" stroke="#D7003A"/><path class="lm-stroke" d="M22.83,26 C23.23,27.5 23.63,29 24.03,30.5" stroke="#1C1C1C"/><path class="lm-stroke" d="M28.5,26 C28.7,27.5 29.7,29 31,30.5" stroke="#0047AB"/></svg><span></span>';
+  document.querySelectorAll('.logo, .foot-logo').forEach(el=>{
+    el.innerHTML = LOGO_SVG;
+    el.querySelector('span').textContent = '鴛照昧琉';
+  });
+  }catch(err){ console.error('logo init failed:', err); }
+
+  try{
+  if(!reduceMotion){
+    const svg = document.getElementById('rainRipples');
+    const svgDefs = svg.querySelector('defs');
+    const NS = 'http://www.w3.org/2000/svg';
+    const RIPPLE_COUNT = 12;
+    const MARGIN = -30;
+
+    let W = window.innerWidth, H = window.innerHeight;
+    function setViewport(){
+      W = window.innerWidth; H = window.innerHeight;
+      svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    }
+    setViewport();
+    window.addEventListener('resize', setViewport);
+
+    let seqCounter = 0;
+    const ripples = [];
+
+    // 新しい波紋を配置する。3つ以上が重なる配置にはしない。
+    function tryPlace(idx){
+      for(let attempt=0; attempt<40; attempt++){
+        const rMax = (110 + Math.random()*220) / 2;
+        const cx = Math.random()*W;
+        const cy = Math.random()*H;
+        let overlapCount = 0;
+        for(let k=0;k<ripples.length;k++){
+          if(k===idx || !ripples[k]) continue;
+          const o = ripples[k];
+          const dx = cx-o.cx, dy = cy-o.cy;
+          const dist = Math.sqrt(dx*dx+dy*dy);
+          if(dist < rMax+o.rMax+MARGIN) overlapCount++;
+        }
+        if(overlapCount < 2){
+          seqCounter++;
+          return {
+            cx, cy, rMax,
+            duration: (3.2 + Math.random()*2.2) * 1000,
+            start: performance.now(),
+            seq: seqCounter
+          };
+        }
+      }
+      // どうしても空きが見つからない場合は、そのまま配置する(稀なケース)
+      seqCounter++;
+      return {
+        cx: Math.random()*W, cy: Math.random()*H,
+        rMax: (110 + Math.random()*220) / 2,
+        duration: (3.2 + Math.random()*2.2) * 1000,
+        start: performance.now(), seq: seqCounter
+      };
+    }
+
+    // 背景の矢絣柄がリング内で透けて見えないようにする、不透明な下地(--kinari)の円だけを集めた層。
+    // 必ず layerG (波紋の柄・線) より先に置き、どのリングの上にも被らないようにする。
+    const backdropG = document.createElementNS(NS,'g');
+    svg.appendChild(backdropG);
+    const layerG = document.createElementNS(NS,'g');
+    svg.appendChild(layerG);
+    const overlapG = document.createElementNS(NS,'g');
+    svg.appendChild(overlapG);
+
+    // 波紋同士が重なった部分は、双方の柄が互いを打ち消し合って無地になってしまうため、
+    // その領域(2円の交差部分)にだけ鱗柄を敷いて、空白に見えないようにする。
+    // 波紋は最大1組までしか重ならない設計なので、RIPPLE_COUNT分の予備スロットで足りる。
+    // 要素は起動時に一度だけ作り、以後は属性の更新のみで使い回す(毎フレームの生成・破棄はしない)。
+    const overlapSlots = [];
+    for(let s=0; s<RIPPLE_COUNT; s++){
+      const clipA = document.createElementNS(NS,'clipPath');
+      clipA.setAttribute('id', `ovA${s}`);
+      const ca = document.createElementNS(NS,'circle');
+      clipA.appendChild(ca);
+      svgDefs.appendChild(clipA);
+
+      const clipB = document.createElementNS(NS,'clipPath');
+      clipB.setAttribute('id', `ovB${s}`);
+      const cb = document.createElementNS(NS,'circle');
+      clipB.appendChild(cb);
+      svgDefs.appendChild(clipB);
+
+      const outer = document.createElementNS(NS,'g');
+      outer.setAttribute('clip-path', `url(#ovA${s})`);
+      const inner = document.createElementNS(NS,'g');
+      inner.setAttribute('clip-path', `url(#ovB${s})`);
+      const rect = document.createElementNS(NS,'rect');
+      rect.setAttribute('width','100%'); rect.setAttribute('height','100%');
+      rect.setAttribute('fill','url(#ripplePatternUroko)');
+      rect.setAttribute('opacity', '0');
+      inner.appendChild(rect);
+      outer.appendChild(inner);
+      overlapG.appendChild(outer);
+
+      overlapSlots.push({ circleA:ca, circleB:cb, pattern:rect });
+    }
+
+    for(let i=0; i<RIPPLE_COUNT; i++){
+      ripples.push(null);
+      const r = tryPlace(i);
+      ripples[i] = r;
+
+      const mask = document.createElementNS(NS,'mask');
+      mask.setAttribute('id', 'rippleMask'+i);
+      mask.setAttribute('maskContentUnits', 'userSpaceOnUse');
+      const maskOwn = document.createElementNS(NS,'circle');
+      maskOwn.setAttribute('fill', 'white');
+      mask.appendChild(maskOwn);
+      // 他の波紋と重なっている間、その部分だけ青海波自体をくり抜くための予備の円。
+      // 波紋1つが同時に重なり得る相手は現実的にごく少数なので、3つ用意しておけば足りる。
+      const cutouts = [];
+      for(let c=0; c<3; c++){
+        const cutout = document.createElementNS(NS,'circle');
+        cutout.setAttribute('fill', 'black');
+        cutout.setAttribute('r', '0');
+        mask.appendChild(cutout);
+        cutouts.push(cutout);
+      }
+      svgDefs.appendChild(mask);
+
+      const backdrop = document.createElementNS(NS,'circle');
+      backdrop.setAttribute('fill', 'var(--kinari)');
+      backdropG.appendChild(backdrop);
+
+      const g = document.createElementNS(NS,'g');
+      const fillRect = document.createElementNS(NS,'rect');
+      fillRect.setAttribute('width','100%');
+      fillRect.setAttribute('height','100%');
+      fillRect.setAttribute('fill','url(#ripplePatternSeigaiha)');
+      fillRect.setAttribute('mask', 'url(#rippleMask'+i+')');
+      g.appendChild(fillRect);
+      layerG.appendChild(g);
+
+      const ring = document.createElementNS(NS,'circle');
+      ring.setAttribute('fill','none');
+      ring.setAttribute('stroke','var(--ripple-color)');
+      ring.setAttribute('stroke-width','1.5');
+      layerG.appendChild(ring);
+
+      r.maskOwn = maskOwn;
+      r.cutouts = cutouts;
+      r.cutoutTargets = cutouts.map(()=>({ cx:0, cy:0, r:0 }));
+      r.backdrop = backdrop;
+      r.fillGroup = g;
+      r.ring = ring;
+    }
+
+    // 波紋の線と同じフェードイン・フェードアウト曲線を、柄の不透明度にも適用する。
+    // ピークは輪がある程度育った時点(35%成長)に置き、小さいうちに一番目立って
+    // 大きく育った頃には薄れている、という違和感を避ける。
+    function opacityShape(t){
+      if(t < 0.35) return t/0.35;
+      if(t < 0.75) return 1 - 0.68*((t-0.35)/0.40); // 1 -> ~0.33 of peak (matches previous mid ratio)
+      return 0.33 * (1 - ((t-0.75)/0.25));
+    }
+    function opacityAt(t, dark){
+      const peak = dark ? 0.035 : 0.10;
+      return peak * opacityShape(t);
+    }
+
+    // 下地(--kinari円)は、青海波より少し遅れて出始めるが、その分速く立ち上がり、
+    // ピーク(35%成長時点)には青海波とちょうど同時に到達する。
+    // 消える時は逆に、青海波より早く完全に透過し終える。
+    function backdropOpacityAt(t){
+      const riseStart = 0.08, peakAt = 0.35, fallEnd = 0.82;
+      if(t < riseStart) return 0;
+      if(t < peakAt) return (t - riseStart) / (peakAt - riseStart);
+      const declineSpan = fallEnd - peakAt;
+      const midEnd = peakAt + declineSpan * (0.40/0.65);
+      if(t < midEnd) return 1 - 0.68 * ((t - peakAt) / (midEnd - peakAt));
+      if(t < fallEnd) return 0.33 * (1 - ((t - midEnd) / (fallEnd - midEnd)));
+      return 0;
+    }
+    const BACKDROP_PEAK = 0.5;
+
+    function respawn(i){
+      const old = ripples[i];
+      const fresh = tryPlace(i);
+      fresh.maskOwn = old.maskOwn;
+      fresh.cutouts = old.cutouts;
+      fresh.cutoutTargets = old.cutoutTargets;
+      old.cutouts.forEach(cut=>{ cut._r = 0; cut.setAttribute('r','0'); });
+      fresh.backdrop = old.backdrop;
+      fresh.fillGroup = old.fillGroup;
+      fresh.ring = old.ring;
+      ripples[i] = fresh;
+    }
+
+    function frame(now){
+      const dark = isDarkTheme();
+
+      ripples.forEach((r,i)=>{
+        let t = (now - r.start) / r.duration;
+        if(t >= 1){ respawn(i); r = ripples[i]; t = 0; }
+        const rad = r.rMax * (0.15 + 0.85*t);
+        const op = opacityAt(t, dark);
+        r.currentR = rad;
+        r.currentOp = op;
+        r.currentT = t;
+        r.currentShape = opacityShape(t);
+        r.maskOwn.setAttribute('cx', r.cx);
+        r.maskOwn.setAttribute('cy', r.cy);
+        r.maskOwn.setAttribute('r', Math.max(rad, 0.01));
+        // 下地は波紋の柄が見えている間だけ矢絣を隠し、柄と同じタイミングで透過していく。
+        r.backdrop.setAttribute('cx', r.cx);
+        r.backdrop.setAttribute('cy', r.cy);
+        r.backdrop.setAttribute('r', Math.max(rad, 0.01));
+        r.backdrop.setAttribute('opacity', backdropOpacityAt(t) * BACKDROP_PEAK);
+        r.fillGroup.setAttribute('opacity', op);
+        r.ring.setAttribute('cx', r.cx);
+        r.ring.setAttribute('cy', r.cy);
+        r.ring.setAttribute('r', Math.max(rad, 0.01));
+        r.ring.setAttribute('opacity', op);
+      });
+
+      // 1. まず全波紋のくり抜き円の「目標値」を一旦クリアする。
+      ripples.forEach(r=>{ r.cutoutsUsed = 0; r.cutoutTargets.forEach(t=>{ t.r = 0; }); });
+
+      // 2. 実際に重なっている組み合わせを、その場で(パートナー管理などに頼らず)毎フレーム調べ、
+      // くり抜きの「目標」を設定する。どのくり抜き円がどの組み合わせに対応するかを記録しておく。
+      const pairSlots = [];
+      let slotIdx = 0;
+      for(let i=0; i<ripples.length && slotIdx<overlapSlots.length; i++){
+        const a = ripples[i];
+        if(a.currentR < 0.5) continue;
+        for(let j=i+1; j<ripples.length && slotIdx<overlapSlots.length; j++){
+          const b = ripples[j];
+          if(b.currentR < 0.5) continue;
+          const dx = a.cx-b.cx, dy = a.cy-b.cy;
+          const dist = Math.sqrt(dx*dx+dy*dy);
+          const overlapDepth = (a.currentR + b.currentR) - dist;
+          if(overlapDepth > 0){
+            let cutA = null, cutB = null;
+            if(a.cutoutsUsed < a.cutoutTargets.length){
+              const idx = a.cutoutsUsed++;
+              const tgt = a.cutoutTargets[idx];
+              tgt.cx = b.cx; tgt.cy = b.cy; tgt.r = b.currentR;
+              cutA = a.cutouts[idx];
+            }
+            if(b.cutoutsUsed < b.cutoutTargets.length){
+              const idx = b.cutoutsUsed++;
+              const tgt = b.cutoutTargets[idx];
+              tgt.cx = a.cx; tgt.cy = a.cy; tgt.r = a.currentR;
+              cutB = b.cutouts[idx];
+            }
+            pairSlots.push({ slot: overlapSlots[slotIdx++], a, b, cutA, cutB });
+          }
+        }
+      }
+
+      // 3. くり抜き円を、目標値へ瞬時にではなく、なめらかに追従させる(パチッと切り替わるのを防ぐ)。
+      const CUTOUT_EASE = 0.3;
+      ripples.forEach(r=>{
+        r.cutouts.forEach((cut, k)=>{
+          const tgt = r.cutoutTargets[k];
+          cut._r = cut._r || 0;
+          if(tgt.r > 0){
+            cut.setAttribute('cx', tgt.cx);
+            cut.setAttribute('cy', tgt.cy);
+          }
+          cut._r += (tgt.r - cut._r) * CUTOUT_EASE;
+          if(cut._r < 0.5) cut._r = 0;
+          cut.setAttribute('r', cut._r);
+        });
+      });
+
+      // 4. 鱗柄は、くり抜き(青海波の除去)が実際にどこまで進んだかに合わせて描く。
+      // これにより「青海波が消えた範囲」と「鱗柄が描かれる範囲」が常に一致し、ズレによる
+      // チラつきが起こらない。
+      pairSlots.forEach(({slot, a, b, cutA, cutB})=>{
+        const rA = cutA ? cutA._r : 0;
+        const rB = cutB ? cutB._r : 0;
+        // くり抜きが目標にどれだけ近づいたか(0〜1)。両方の進み具合の小さい方を採用する。
+        const progressA = b.currentR > 0 ? Math.min(rA / b.currentR, 1) : 0;
+        const progressB = a.currentR > 0 ? Math.min(rB / a.currentR, 1) : 0;
+        const progress = Math.min(progressA, progressB);
+        slot.circleA.setAttribute('cx', a.cx);
+        slot.circleA.setAttribute('cy', a.cy);
+        slot.circleA.setAttribute('r', a.currentR);
+        slot.circleB.setAttribute('cx', b.cx);
+        slot.circleB.setAttribute('cy', b.cy);
+        slot.circleB.setAttribute('r', b.currentR);
+        // 鱗柄は青海波自身のフェード状態に同期させ、さらにくり抜きの進み具合でも重み付けする。
+        const bothFade = Math.min(opacityShape(a.currentT), opacityShape(b.currentT));
+        const overlapPeak = dark ? 0.06 : 0.17;
+        slot.pattern.setAttribute('opacity', overlapPeak * bothFade * progress);
+      });
+      for(; slotIdx<overlapSlots.length; slotIdx++){
+        overlapSlots[slotIdx].pattern.setAttribute('opacity', '0');
+      }
+
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+  }catch(err){ console.error('rain ripples init failed:', err); }
+
+  try{
+  const header = document.getElementById('siteHeader');
+  function syncHeaderScrolled(){ header.classList.toggle('scrolled', window.scrollY > 40); }
+  window.addEventListener('scroll', syncHeaderScrolled, { passive:true });
+  syncHeaderScrolled();
+
+  const menuBtn = document.getElementById('menuBtn');
+  const mainNav = document.getElementById('mainNav');
+  function openMenu(){
+    mainNav.classList.add('open');
+    menuBtn.classList.add('open');
+    menuBtn.setAttribute('aria-expanded', true);
+    menuBtn.setAttribute('aria-label', 'メニューを閉じる');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeMenu(){
+    mainNav.classList.remove('open');
+    menuBtn.classList.remove('open');
+    menuBtn.setAttribute('aria-expanded', false);
+    menuBtn.setAttribute('aria-label', 'メニューを開く');
+    document.body.style.overflow = '';
+  }
+  menuBtn.addEventListener('click', ()=>{
+    if(mainNav.classList.contains('open')) closeMenu(); else openMenu();
+  });
+
+  const navArts = document.getElementById('navArts');
+  const navArtsLi = navArts ? navArts.closest('li') : null;
+  function closeArtsMenu(){
+    if(navArtsLi) navArtsLi.classList.remove('expanded');
+  }
+  if(navArts && navArtsLi){
+    navArts.addEventListener('click', (e)=>{
+      e.preventDefault();
+      navArtsLi.classList.toggle('expanded');
+    });
+  }
+  mainNav.querySelectorAll('a').forEach(a=>{
+    if(a.id === 'navArts' || a.classList.contains('nav-placeholder')) return;
+    a.addEventListener('click', ()=>{ closeMenu(); closeArtsMenu(); });
+  });
+  mainNav.querySelectorAll('.nav-placeholder').forEach(a=>{
+    a.addEventListener('click', (e)=>{ e.preventDefault(); });
+  });
+  document.addEventListener('click', (e)=>{
+    if(navArtsLi && navArtsLi.classList.contains('expanded') && !navArtsLi.contains(e.target)){
+      closeArtsMenu();
+    }
+    if(!mainNav.classList.contains('open')) return;
+    if(mainNav.contains(e.target) || menuBtn.contains(e.target)) return;
+    closeMenu();
+  });
+  document.addEventListener('keydown', (e)=>{
+    if(e.key === 'Escape' && mainNav.classList.contains('open')) closeMenu();
+    if(e.key === 'Escape') closeArtsMenu();
+  });
+  }catch(err){ console.error('header/menu init failed:', err); }
+
+  try{
+  (function(){
+    const root = document.documentElement;
+    const toggle = document.getElementById('themeToggle');
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+
+    function label(t){
+      toggle.setAttribute('aria-pressed', String(t === 'dark'));
+      toggle.setAttribute('aria-label', t === 'dark' ? 'ライトモードに切り替え' : 'ダークモードに切り替え');
+      if(metaTheme) metaTheme.setAttribute('content', t === 'dark' ? '#14100E' : '#F6F1E6');
+    }
+
+    applyTheme = function(t){
+      root.setAttribute('data-site-theme', t);
+      label(t);
+      document.dispatchEvent(new CustomEvent('themechange', { detail:{ theme:t } }));
+    };
+
+    label(isDarkTheme() ? 'dark' : 'light');
+
+    toggle.addEventListener('click', ()=>{
+      const next = isDarkTheme() ? 'light' : 'dark';
+      applyTheme(next);
+      try{ localStorage.setItem('site-theme', next); }catch(e){}
+      const fb = window.__siteFirebase;
+      if(fb && fb.ready && fb.auth && fb.auth.currentUser){
+        fb.setDoc(fb.doc(fb.db, 'users', fb.auth.currentUser.uid), { theme: next }, { merge:true }).catch(()=>{});
+      }
+    });
+  })();
+  }catch(err){ console.error('theme toggle init failed:', err); }
+
+  try{
+  (function(){
+    const langToggle = document.getElementById('langToggle');
+    const htmlEl = document.documentElement;
+
+    function applyLanguage(lang){
+      siteLang = lang;
+      htmlEl.setAttribute('lang', lang === 'en' ? 'en' : 'ja');
+
+      document.querySelectorAll('.i18n').forEach(el=>{
+        if(lang === 'en'){
+          if(el.dataset.jaCache === undefined){
+            el.dataset.jaCache = el.innerHTML;
+          }
+          el.innerHTML = el.dataset.en;
+        }else{
+          if(el.dataset.jaCache !== undefined){
+            el.innerHTML = el.dataset.jaCache;
+          }
+        }
+      });
+
+      langToggle.textContent = lang === 'en' ? '日本語' : 'English';
+      langToggle.setAttribute('aria-label', lang === 'en' ? 'Switch to Japanese' : 'Switch to English');
+      langToggle.dataset.lang = lang;
+    }
+
+    langToggle.addEventListener('click', ()=>{
+      const switchingToEn = siteLang !== 'en';
+      applyLanguage(siteLang === 'en' ? 'ja' : 'en');
+      if(switchingToEn && typeof AchievementModule !== 'undefined' && AchievementModule.isLoggedIn()){
+        AchievementModule.unlock('anglophile');
+      }
+    });
+  })();
+  }catch(err){ console.error('language toggle init failed:', err); }
+
+  try{
+  const fontSizeSlider = document.getElementById('fontSizeSlider');
+  if(fontSizeSlider){
+    fontSizeSlider.addEventListener('input', ()=>{
+      document.documentElement.style.setProperty('--font-scale', fontSizeSlider.value / 100);
+      if(Number(fontSizeSlider.value) >= 150 && typeof AchievementModule !== 'undefined' && AchievementModule.isLoggedIn()){
+        AchievementModule.unlock('font-giant');
+      }
+    });
+  }
+  }catch(err){ console.error('font size slider init failed:', err); }
+
+  try{
+  const io = new IntersectionObserver((entries)=>{
+    entries.forEach(entry=>{
+      if(entry.isIntersecting){
+        entry.target.classList.add('in');
+        io.unobserve(entry.target);
+      }
+    });
+  }, { threshold:0.15 });
+  document.querySelectorAll('.reveal').forEach(el=>io.observe(el));
+  }catch(err){ console.error('reveal observer init failed:', err); }
+
+  try{
+  document.getElementById('year').textContent = new Date().getFullYear();
+  }catch(err){ console.error('year text init failed:', err); }
+
+  try{
+    const siteSearchToggle = document.getElementById('siteSearchToggle');
+    const siteSearchPanel = document.getElementById('siteSearchPanel');
+    const siteSearchInput = document.getElementById('siteSearchInput');
+    const siteSearchResults = document.getElementById('siteSearchResults');
+    const siteSearchEmpty = document.getElementById('siteSearchEmpty');
+
+    function toBigrams(str){
+      const grams = [];
+      for(let i=0; i<str.length-1; i++) grams.push(str.slice(i, i+2));
+      return grams;
+    }
+    function fuzzyScore(query, text){
+      if(text.includes(query)) return 1000 - text.indexOf(query);
+      if(query.length < 3) return 0;
+      const qGrams = toBigrams(query);
+      if(qGrams.length === 0) return 0;
+      let hits = 0;
+      qGrams.forEach(g=>{ if(text.includes(g)) hits++; });
+      const ratio = hits / qGrams.length;
+      return ratio >= 0.5 ? Math.round(ratio * 100) : 0;
+    }
+
+    const siteIndex = [
+      { section:'Home', sectionEn:'Home', anchor:'index.html#top', external:true,
+        textJa:'手を動かし、静けさを、かたちに。季節がひとつ過ぎるあいだに、ひとつ何かをつくる。急がずに、けれど手を止めずに。',
+        textEn:'Making things by hand, giving shape to quiet. One thing made, each time a season passes.' },
+      { section:'作品', sectionEn:'Works', anchor:'index.html#works', external:true,
+        textJa:'illustration 作品 遠い部屋 灯りをともす 雨のあと 手紙 夜のかたち 庭の記録 イラスト 工芸 写真 文章',
+        textEn:'illustration works craft photography text' },
+      { section:'プロフィール', sectionEn:'Profile', anchor:'index.html#profile', external:true,
+        textJa:'鴛照昧琉 おしてまいる プロフィール 会社員として働くかたわら、休日に絵と文章をつくっています。手のひらに収まる小さな発見。紙と鉛筆、デジタルと工芸。',
+        textEn:'Oshitemairu profile office employee illustrations writing craft digital' },
+      { section:'お問い合わせ', sectionEn:'Contact', anchor:'index.html#contact', external:true,
+        textJa:'お問い合わせ お仕事のご相談 展示のご案内 メールを送る',
+        textEn:'Contact work inquiries exhibitions send an email' },
+      { section:'FAQ', sectionEn:'FAQ', anchor:'#faq',
+        textJa:'ご依頼について よくある質問 ご依頼の流れ 金額の目安 5000円 20000円 納期 2〜4週間 ヒアリング ラフ提出 修正 納品',
+        textEn:'FAQ commission process price range delivery weeks rough sketch revisions' }
+    ];
+
+    function snippetFor(entry){
+      const text = isEnglish() ? entry.textEn : entry.textJa;
+      return text.length > 34 ? text.slice(0, 34) + '…' : text;
+    }
+
+    function renderResults(query){
+      siteSearchResults.innerHTML = '';
+      if(query === ''){
+        siteSearchEmpty.hidden = true;
+        return;
+      }
+      const q = query.toLowerCase();
+      const scored = siteIndex.map(entry=>{
+        const haystack = (entry.textJa + ' ' + entry.textEn).toLowerCase();
+        return { entry, score: fuzzyScore(q, haystack) };
+      }).filter(x => x.score > 0);
+      scored.sort((a,b)=> b.score - a.score);
+      const matches = scored.slice(0, 8).map(x => x.entry);
+
+      siteSearchEmpty.hidden = matches.length > 0;
+      matches.forEach(entry=>{
+        const li = document.createElement('li');
+        const a = document.createElement('a');
+        a.href = entry.anchor;
+        a.innerHTML = `<span class="site-search-result-section">${isEnglish() ? entry.sectionEn : entry.section}</span><span class="site-search-result-snippet">${snippetFor(entry)}</span>`;
+        a.addEventListener('click', (e)=>{
+          e.preventDefault();
+          searchPanelCtl.close();
+          if(entry.external){
+            window.location.href = entry.anchor;
+            return;
+          }
+          document.querySelector(entry.anchor).scrollIntoView({ behavior:'smooth' });
+        });
+        li.appendChild(a);
+        siteSearchResults.appendChild(li);
+      });
+    }
+
+    const searchPanelCtl = bindPanelToggle(
+      siteSearchToggle, siteSearchPanel,
+      ()=> siteSearchInput.focus(),
+      ()=>{ siteSearchInput.value = ''; siteSearchResults.innerHTML = ''; siteSearchEmpty.hidden = true; }
+    );
+    siteSearchInput.addEventListener('input', ()=> renderResults(siteSearchInput.value.trim()));
+  }catch(err){ console.error('site search init failed:', err); }
+
+  try{
+    const settingsToggle = document.getElementById('settingsToggle');
+    const settingsPanel = document.getElementById('settingsPanel');
+    bindPanelToggle(settingsToggle, settingsPanel);
+    let settingsOpenCount = 0;
+    settingsToggle.addEventListener('click', ()=>{
+      settingsOpenCount++;
+      if(settingsOpenCount >= 10 && typeof AchievementModule !== 'undefined' && AchievementModule.isLoggedIn()){
+        AchievementModule.unlock('settings-addict');
+      }
+    });
+  }catch(err){ console.error('settings panel init failed:', err); }
+
+  try{
+    const REWATCH_KEY = 'portfolio-rewatch-history';
+    const REWATCH_MAX = 12;
+    function getRewatchHistory(){
+      try{ return JSON.parse(localStorage.getItem(REWATCH_KEY) || '[]'); }catch(e){ return []; }
+    }
+    function saveRewatchHistory(list){
+      try{ localStorage.setItem(REWATCH_KEY, JSON.stringify(list)); }catch(e){}
+    }
+    // entry: { id, type, title, titleEn, color, img }
+    window.recordRewatch = function(entry){
+      if(!entry || !entry.id || !entry.type) return;
+      let list = getRewatchHistory().filter(x => !(x.id === entry.id && x.type === entry.type));
+      list.unshift(entry);
+      if(list.length > REWATCH_MAX) list = list.slice(0, REWATCH_MAX);
+      saveRewatchHistory(list);
+    };
+    const rewatchBackdrop = document.getElementById('rewatchBackdrop');
+    const rewatchSheet = document.getElementById('rewatchSheet');
+    const rewatchList = document.getElementById('rewatchList');
+    const rewatchEmpty = document.getElementById('rewatchEmpty');
+    const navRewatch = document.getElementById('navRewatch');
+
+    function renderRewatchList(){
+      const history = getRewatchHistory();
+      rewatchList.innerHTML = '';
+      rewatchEmpty.hidden = history.length > 0;
+      history.forEach(entry=>{
+        const title = (isEnglish() && entry.titleEn) ? entry.titleEn : entry.title;
+        const item = document.createElement('div');
+        item.className = 'rewatch-item';
+        const fallbackColor = entry.color || 'linear-gradient(150deg,#726B5E,#4A453B)';
+        const media = entry.img
+          ? `<img src="${entry.img}" alt="${title}" style="width:100%;height:100%;object-fit:cover;" onerror="this.outerHTML='<div style=&quot;position:absolute;inset:0;background:${fallbackColor}&quot;></div>'">`
+          : `<div style="position:absolute;inset:0;background:${fallbackColor}"></div>`;
+        item.innerHTML = `<div class="rewatch-thumb">${media}</div><p>${escapeHtml(title)}</p>`;
+        item.addEventListener('click', ()=>{
+          if(entry.type === 'fanart'){
+            rewatchCtl.close();
+            return; // 既にファンアートページにいるので、シートを閉じるだけ
+          }
+          window.location.href = 'index.html#works';
+        });
+        rewatchList.appendChild(item);
+      });
+    }
+
+    // --- 実績一覧の表示 ---
+    const achLoginNote = document.getElementById('achievementsLoginNote');
+    const achList = document.getElementById('achievementsList');
+    const achToastRow = document.getElementById('achievementsToastRow');
+    function renderAchievements(){
+      const loggedIn = typeof AchievementModule !== 'undefined' && AchievementModule.isLoggedIn();
+      achLoginNote.hidden = loggedIn;
+      achList.hidden = !loggedIn;
+      achToastRow.hidden = !loggedIn;
+      if(!loggedIn) return;
+      achList.innerHTML = '';
+      window.ACHIEVEMENTS.forEach(def=>{
+        const unlocked = AchievementModule.has(def.id);
+        const item = document.createElement('div');
+        item.className = 'achievement-item' + (unlocked ? '' : ' locked');
+        item.innerHTML = `
+          <div class="achievement-head">
+            <span class="achievement-name">
+              ${unlocked ? '🏆' : '🔒'} ${def.name}
+              ${def.type === 'unique' ? '<span class="tag-unique">限定</span>' : ''}
+            </span>
+            <span class="achievement-toggle">+</span>
+          </div>
+          <div class="achievement-desc">
+            <p>${def.desc}</p>
+            ${unlocked ? `<button type="button" class="achievement-set-title${AchievementModule.getTitle() === def.id ? ' current' : ''}" data-id="${def.id}">${AchievementModule.getTitle() === def.id ? '称号として設定中' : '称号として設定する'}</button>` : ''}
+          </div>`;
+        item.querySelector('.achievement-head').addEventListener('click', ()=>{
+          item.classList.toggle('expanded');
+        });
+        const setBtn = item.querySelector('.achievement-set-title');
+        if(setBtn){
+          setBtn.addEventListener('click', async (e)=>{
+            e.stopPropagation();
+            await AchievementModule.setTitle(def.id);
+            if(typeof updateTitleBadge === 'function') updateTitleBadge();
+            renderAchievements();
+          });
+        }
+        achList.appendChild(item);
+      });
+    }
+    if(typeof AchievementModule !== 'undefined') AchievementModule.onChange(renderAchievements);
+
+    const bookmarkTabs = document.querySelectorAll('.bookmark-tab');
+    const viewedPanel = document.getElementById('bookmarkViewedPanel');
+    const achPanel = document.getElementById('bookmarkAchievementsPanel');
+    bookmarkTabs.forEach(tab=>{
+      tab.addEventListener('click', ()=>{
+        bookmarkTabs.forEach(t=> t.classList.toggle('active', t === tab));
+        const which = tab.dataset.bmtab;
+        viewedPanel.hidden = which !== 'viewed';
+        achPanel.hidden = which !== 'achievements';
+        if(which === 'achievements') renderAchievements();
+      });
+    });
+
+    const rewatchCtl = bindSheetModal(rewatchBackdrop, rewatchSheet, 400, renderRewatchList);
+    navRewatch.addEventListener('click', (e)=>{ e.preventDefault(); rewatchCtl.open(); });
+    document.getElementById('rewatchClose').addEventListener('click', rewatchCtl.close);
+  }catch(err){ console.error('rewatch init failed:', err); }
+
+  try{
+    const qrBackdrop = document.getElementById('qrBackdrop');
+    const qrModal = document.getElementById('qrModal');
+    const navQr = document.getElementById('navQr');
+    function fillQrContent(){
+      const url = location.origin + location.pathname;
+      document.getElementById('qrImage').src = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(url);
+      document.getElementById('qrUrlText').textContent = url;
+    }
+    const qrCtl = bindSheetModal(qrBackdrop, qrModal, 300, fillQrContent);
+    navQr.addEventListener('click', (e)=>{ e.preventDefault(); qrCtl.open(); });
+    document.getElementById('qrClose').addEventListener('click', qrCtl.close);
+  }catch(err){ console.error('qr init failed:', err); }
+
+  try{
+    const bgmToggle = document.getElementById('bgmToggle');
+    const bgmAudio = document.getElementById('bgmAudio');
+    let bgmClickCount = 0;
+    bgmToggle.addEventListener('click', ()=>{
+      bgmClickCount++;
+      if(bgmClickCount >= 10 && typeof AchievementModule !== 'undefined' && AchievementModule.isLoggedIn()){
+        AchievementModule.unlock('bgm-mania');
+      }
+      const playing = bgmToggle.getAttribute('aria-pressed') === 'true';
+      if(playing){
+        bgmAudio.pause();
+        bgmToggle.setAttribute('aria-pressed', 'false');
+        bgmToggle.setAttribute('aria-label', 'BGMを再生');
+        bgmToggle.querySelector('.bgm-icon-play').hidden = false;
+        bgmToggle.querySelector('.bgm-icon-pause').hidden = true;
+      }else{
+        bgmAudio.play().catch(()=>{});
+        bgmToggle.setAttribute('aria-pressed', 'true');
+        bgmToggle.setAttribute('aria-label', 'BGMを停止');
+        bgmToggle.querySelector('.bgm-icon-play').hidden = true;
+        bgmToggle.querySelector('.bgm-icon-pause').hidden = false;
+      }
+    });
+  }catch(err){ console.error('bgm init failed:', err); }
+
+  window.DISQUS_SHORTNAME = 'oshitemairu';
+
+  try{
+    // お気に入り(サイト共通):ログインしていない間は端末内、ログインするとアカウントに同期する。
+    const FAV_KEY = 'portfolio-favorites';
+    function loadLocalFavorites(){
+      try{ return new Set(JSON.parse(localStorage.getItem(FAV_KEY) || '[]')); }
+      catch(e){ return new Set(); }
+    }
+    function saveLocalFavorites(set){
+      try{ localStorage.setItem(FAV_KEY, JSON.stringify([...set])); }catch(e){}
+    }
+    const FavModule = (function(){
+      let uid = null;
+      let cache = loadLocalFavorites();
+      const listeners = [];
+      function notify(){ listeners.forEach(fn=>{ try{ fn(cache); }catch(e){} }); }
+      async function persist(){
+        if(uid && window.__siteFirebase && window.__siteFirebase.ready && !window.__quotaExceeded){
+          const fb = window.__siteFirebase;
+          try{ await fb.setDoc(fb.doc(fb.db, 'users', uid), { favorites: [...cache] }, { merge:true }); }
+          catch(err){
+            console.error('favorites sync failed:', err);
+            if(window.isQuotaError(err)) window.onQuotaExceeded();
+            saveLocalFavorites(cache);
+          }
+        }else{
+          saveLocalFavorites(cache);
+        }
+      }
+      return {
+        onChange(fn){ listeners.push(fn); fn(cache); },
+        has(id){ return cache.has(id); },
+        size(){ return cache.size; },
+        toggle(id){
+          if(cache.has(id)) cache.delete(id); else cache.add(id);
+          persist();
+          notify();
+          return cache.has(id);
+        },
+        async setUser(newUid){
+          if(newUid){
+            const fb = window.__siteFirebase;
+            let remote = new Set();
+            try{
+              const snap = await fb.getDoc(fb.doc(fb.db, 'users', newUid));
+              if(snap.exists() && Array.isArray(snap.data().favorites)) remote = new Set(snap.data().favorites);
+            }catch(err){ console.error('failed to load account favorites:', err); }
+            const local = loadLocalFavorites();
+            cache = new Set([...remote, ...local]);
+            uid = newUid;
+            await persist();
+          }else{
+            uid = null;
+            cache = loadLocalFavorites();
+          }
+          notify();
+        }
+      };
+    })();
+    window.FavModule = FavModule;
+
+    // 実績システム。ログインしている間だけ有効。
+    // 通常実績:誰でも条件を満たせば解除できる。
+    // ユニーク実績:人数に上限があり、Firestoreのトランザクションで安全に数える。
+    window.ACHIEVEMENTS = [
+      { id:'first-login', name:'見参', desc:'このサイトに、初めてログインする。', type:'normal' },
+      { id:'first-favorite', name:'目利き', desc:'作品を1つ、お気に入りに追加する。', type:'normal' },
+      { id:'collector', name:'蒐集家', desc:'お気に入りを、合計5個以上登録する。', type:'normal' },
+      { id:'fanart-poster', name:'彩筆の徒', desc:'ファンアートを1つ投稿する。', type:'normal' },
+      { id:'nickname-set', name:'銘を刻む者', desc:'サイト内ニックネームを設定する。', type:'normal' },
+      { id:'pioneer-1', name:'開祖', desc:'このサイトに、誰よりも先にログインする(先着1名限定)。', type:'unique', limit:1, topRank:true },
+      { id:'pioneer-30', name:'先駆者', desc:'このサイトに、早い時期にログインする(先着30名限定)。', type:'unique', limit:30 },
+      { id:'first-fanart', name:'初筆', desc:'ファンアートを、早い時期に投稿する(先着5名限定)。', type:'unique', limit:5 },
+      { id:'night-owl-hour', name:'夜鷹の迷い仔', desc:'深夜2時〜4時の間に、このサイトへログインする。', type:'normal' },
+      { id:'nickname-changer', name:'出世頭', desc:'ニックネームを、3回以上変更する。', type:'normal' },
+      { id:'idle-master', name:'住めば都', desc:'このサイトを、10分以上開いたままにする。', type:'normal' },
+      { id:'settings-addict', name:'屯田兵', desc:'設定パネルを、10回開く。', type:'normal' },
+      { id:'anglophile', name:'ハイカラさん', desc:'表示言語を、英語に切り替える。', type:'normal' },
+      { id:'zoom-master', name:'細工師', desc:'イラストを、限界まで拡大する。', type:'normal' },
+      { id:'bgm-mania', name:'調律師', desc:'BGMのボタンを、10回押す。', type:'normal' },
+      { id:'font-giant', name:'大目付', desc:'文字の大きさを、最大にする。', type:'normal' },
+      { id:'mega-collector', name:'大数寄者', desc:'お気に入りを、合計10個以上登録する。', type:'normal' }
+    ];
+
+    // ご自身(サイト運営者)のGoogleアカウントには、人数限定のユニーク実績が配布されないようにする。
+    // Firebaseプロジェクトを作成し、一度ご自身のアカウントでログインした後、
+    // Firebase Console の Authentication タブ、または Firestore の「users」コレクションの
+    // ドキュメントID(あなたのuid)を確認して、下の文字列を差し替えてください。
+    const OWNER_UID = 'YOUR_OWNER_UID';
+    const AchievementModule = (function(){
+      let uid = null;
+      let unlocked = new Set();
+      let titleId = null;
+      const listeners = [];
+      function notify(){ listeners.forEach(fn=>{ try{ fn(); }catch(e){} }); }
+
+      async function persistUnlocked(){
+        const fb = window.__siteFirebase;
+        if(!uid || !fb || !fb.ready) return;
+        try{ await fb.setDoc(fb.doc(fb.db, 'users', uid), { achievements: [...unlocked] }, { merge:true }); }
+        catch(err){ console.error('achievement save failed:', err); }
+      }
+
+      return {
+        onChange(fn){ listeners.push(fn); },
+        isLoggedIn(){ return !!uid; },
+        has(id){ return unlocked.has(id); },
+        getTitle(){ return titleId; },
+
+        async setUser(newUid){
+          uid = newUid;
+          unlocked = new Set();
+          titleId = null;
+          if(uid){
+            const fb = window.__siteFirebase;
+            if(fb && fb.ready){
+              try{
+                const snap = await fb.getDoc(fb.doc(fb.db, 'users', uid));
+                if(snap.exists()){
+                  const data = snap.data();
+                  if(Array.isArray(data.achievements)) unlocked = new Set(data.achievements);
+                  if(data.titleAchievement) titleId = data.titleAchievement;
+                }
+              }catch(err){ console.error('failed to load achievements:', err); }
+            }
+          }
+          notify();
+        },
+
+        async unlock(id){
+          if(!uid || unlocked.has(id)) return;
+          unlocked.add(id);
+          await persistUnlocked();
+          notify();
+          window.dispatchEvent(new CustomEvent('achievement-unlocked', { detail:{ id } }));
+        },
+
+        async unlockUnique(id, limit){
+          if(!uid || unlocked.has(id)) return;
+          if(uid === OWNER_UID) return; // 運営者本人にはユニーク実績を配らない
+          const fb = window.__siteFirebase;
+          if(!fb || !fb.ready || window.__quotaExceeded) return;
+          try{
+            const counterRef = fb.doc(fb.db, 'achievementCounters', id);
+            const gotIt = await fb.runTransaction(fb.db, async (tx)=>{
+              const snap = await tx.get(counterRef);
+              const current = snap.exists() ? (snap.data().count || 0) : 0;
+              if(current >= limit) return false;
+              tx.set(counterRef, { count: current + 1 }, { merge:true });
+              return true;
+            });
+            if(gotIt){
+              unlocked.add(id);
+              await persistUnlocked();
+              notify();
+              window.dispatchEvent(new CustomEvent('achievement-unlocked', { detail:{ id } }));
+            }
+          }catch(err){
+            console.error('unique achievement check failed:', err);
+            if(window.isQuotaError && window.isQuotaError(err)) window.onQuotaExceeded();
+          }
+        },
+
+        async setTitle(id){
+          if(!uid || !unlocked.has(id)) return;
+          titleId = id;
+          const fb = window.__siteFirebase;
+          try{ await fb.setDoc(fb.doc(fb.db, 'users', uid), { titleAchievement: id }, { merge:true }); }
+          catch(err){ console.error('failed to set title:', err); }
+          notify();
+        }
+      };
+    })();
+    window.AchievementModule = AchievementModule;
+    FavModule.onChange(()=>{
+      document.querySelectorAll('.fanart-card[data-id]').forEach(card=>{
+        const badge = card.querySelector('[data-fav-badge]');
+        if(badge) badge.classList.toggle('active', FavModule.has('fanart-' + card.dataset.id));
+      });
+    });
+
+    const form = document.getElementById('fanartForm');
+    const urlInput = document.getElementById('fanartUrl');
+    const nameInput = document.getElementById('fanartName');
+    const submitBtn = document.getElementById('fanartSubmitBtn');
+    const grid = document.getElementById('fanartGrid');
+    const emptyMsg = document.getElementById('fanartEmpty');
+    const loadingMsg = document.getElementById('fanartLoading');
+
+    const lightbox = document.getElementById('fanartLightbox');
+    const lbImg = document.getElementById('fanartLbImg');
+    const lbName = document.getElementById('fanartLbName');
+
+    // URL入力欄の下に、その場でプレビューを表示する(画像・YouTube・直接の動画ファイルに対応)。
+    const previewBox = document.getElementById('fanartPreview');
+    const previewImg = document.getElementById('fanartPreviewImg');
+    const previewError = document.getElementById('fanartPreviewError');
+    let previewDebounce = null;
+    urlInput.addEventListener('input', ()=>{
+      clearTimeout(previewDebounce);
+      const url = urlInput.value.trim();
+      if(!/^https?:\/\/.+/i.test(url)){
+        previewBox.hidden = true;
+        previewError.hidden = true;
+        return;
+      }
+      previewDebounce = setTimeout(()=>{
+        previewError.hidden = true;
+        const ytId = (url.match(/(?:youtube\.com\/watch\?v=|youtube\.com\/shorts\/|youtu\.be\/)([\w-]{11})/) || [])[1];
+        if(ytId){
+          previewImg.onload = ()=>{ previewBox.hidden = false; };
+          previewImg.onerror = ()=>{ previewBox.hidden = true; previewError.hidden = false; };
+          previewImg.src = `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
+          return;
+        }
+        if(/\.(mp4|webm|mov)(\?.*)?$/i.test(url)){
+          previewBox.hidden = false;
+          previewBox.innerHTML = `<video src="${url}" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;" onerror="this.closest('.fanart-preview').hidden=true; document.getElementById('fanartPreviewError').hidden=false;"></video>`;
+          return;
+        }
+        previewBox.innerHTML = '<img id="fanartPreviewImg" alt="プレビュー">';
+        const img = document.getElementById('fanartPreviewImg');
+        img.onload = ()=>{ previewBox.hidden = false; };
+        img.onerror = ()=>{ previewBox.hidden = true; previewError.hidden = false; };
+        img.src = url;
+      }, 300);
+    });
+    const lbMeta = document.getElementById('fanartLbMeta');
+    const likeBtn = document.getElementById('fanartLikeBtn');
+    const likeCountEl = document.getElementById('fanartLikeCount');
+    const lbCloseBtn = document.getElementById('fanartLbClose');
+    const deleteBtn = document.getElementById('fanartDeleteBtn');
+    const favBtn = document.getElementById('fanartFavBtn');
+
+    let fb = null;
+    let currentDocId = null;
+    let currentAuthorUid = null;
+    let currentLikes = 0;
+
+    function formatDate(ts){
+      if(!ts) return '';
+      const d = ts.toDate ? ts.toDate() : new Date(ts);
+      return d.getFullYear() + '年' + (d.getMonth()+1) + '月' + d.getDate() + '日 ' +
+        String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+    }
+
+    function likedIds(){
+      try{ return JSON.parse(localStorage.getItem('fanart-liked') || '[]'); }catch(e){ return []; }
+    }
+    function markLiked(id){
+      try{
+        const ids = likedIds();
+        if(!ids.includes(id)){ ids.push(id); localStorage.setItem('fanart-liked', JSON.stringify(ids)); }
+      }catch(e){}
+    }
+
+    function renderCommentsFor(docId, title){
+      const pageUrl = location.origin + location.pathname + '#fanart-' + docId;
+      if(window.DISQUS){
+        window.DISQUS.reset({
+          reload:true,
+          config:function(){ this.page.identifier = 'fanart-' + docId; this.page.url = pageUrl; this.page.title = title; }
+        });
+      }else{
+        window.disqus_config = function(){
+          this.page.url = pageUrl;
+          this.page.identifier = 'fanart-' + docId;
+          this.page.title = title;
+        };
+        const s = document.createElement('script');
+        s.src = 'https://' + window.DISQUS_SHORTNAME + '.disqus.com/embed.js';
+        s.setAttribute('data-timestamp', String(+new Date()));
+        (document.head || document.body).appendChild(s);
+      }
+    }
+
+    function openLightbox(item){
+      currentDocId = item.id;
+      currentLikes = item.likes || 0;
+      currentAuthorUid = item.authorUid || null;
+      lbImg.innerHTML = mediaHtml(item.imageUrl, escapeHtml(item.name || 'ファンアート'));
+      lbName.textContent = item.name || '名無しさん';
+      lbMeta.textContent = formatDate(item.createdAt);
+      likeCountEl.textContent = currentLikes;
+      likeBtn.classList.toggle('liked', likedIds().includes(item.id));
+      const favId = 'fanart-' + item.id;
+      favBtn.classList.toggle('active', FavModule.has(favId));
+      favBtn.setAttribute('aria-pressed', String(FavModule.has(favId)));
+      // 投稿者本人がログインしている時だけ、削除ボタンを表示する(パスワード不要、本人確認はログイン状態で行う)。
+      const siteFb = window.__siteFirebase;
+      const myUid = (siteFb && siteFb.ready && siteFb.auth && siteFb.auth.currentUser) ? siteFb.auth.currentUser.uid : null;
+      deleteBtn.hidden = !(currentAuthorUid && myUid && myUid === currentAuthorUid);
+      renderCommentsFor(item.id, item.name || 'ファンアート');
+      if(typeof recordRewatch === 'function'){
+        const yt = youtubeEmbedUrl(item.imageUrl);
+        const ytIdMatch = item.imageUrl.match(/(?:youtube\.com\/watch\?v=|youtube\.com\/shorts\/|youtu\.be\/)([\w-]{11})/);
+        const isVideoFile = /\.(mp4|webm|mov)(\?.*)?$/i.test(item.imageUrl);
+        const thumbImg = yt ? `https://img.youtube.com/vi/${ytIdMatch[1]}/hqdefault.jpg` : (isVideoFile ? '' : item.imageUrl);
+        recordRewatch({ id: item.id, type:'fanart', title: item.name || '名無しさん', img: thumbImg });
+      }
+      lightbox.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+    function closeLightbox(){
+      lightbox.classList.remove('open');
+      document.body.style.overflow = '';
+      currentDocId = null;
+    }
+    lbCloseBtn.addEventListener('click', closeLightbox);
+    lightbox.addEventListener('click', (e)=>{ if(e.target === lightbox) closeLightbox(); });
+    document.addEventListener('keydown', (e)=>{ if(e.key === 'Escape' && lightbox.classList.contains('open')) closeLightbox(); });
+
+    likeBtn.addEventListener('click', async ()=>{
+      if(!currentDocId || !fb || !fb.ready) return;
+      if(likedIds().includes(currentDocId)) return; // 1人1回まで
+      likeBtn.classList.add('liked');
+      currentLikes += 1;
+      likeCountEl.textContent = currentLikes;
+      markLiked(currentDocId);
+      try{
+        await fb.updateDoc(fb.doc(fb.db, 'fanart', currentDocId), { likes: fb.increment(1) });
+        const card = grid.querySelector(`[data-id="${currentDocId}"] .fanart-mini-like span`);
+        if(card) card.textContent = currentLikes;
+      }catch(err){ console.error('like failed:', err); }
+    });
+
+    favBtn.addEventListener('click', ()=>{
+      if(!currentDocId) return;
+      const favId = 'fanart-' + currentDocId;
+      const active = FavModule.toggle(favId);
+      favBtn.classList.toggle('active', active);
+      favBtn.setAttribute('aria-pressed', String(active));
+      if(active && typeof AchievementModule !== 'undefined' && AchievementModule.isLoggedIn()){
+        AchievementModule.unlock('first-favorite');
+        if(FavModule.size() >= 5) AchievementModule.unlock('collector');
+        if(FavModule.size() >= 10) AchievementModule.unlock('mega-collector');
+      }
+    });
+
+    deleteBtn.addEventListener('click', async ()=>{
+      if(!currentDocId || !fb || !fb.ready) return;
+      const siteFb = window.__siteFirebase;
+      const myUid = (siteFb && siteFb.ready && siteFb.auth && siteFb.auth.currentUser) ? siteFb.auth.currentUser.uid : null;
+      if(!currentAuthorUid || !myUid || myUid !== currentAuthorUid){
+        alert('この投稿を削除できるのは、投稿したご本人だけです。');
+        return;
+      }
+      if(!window.confirm('この投稿を削除しますか?この操作は取り消せません。')) return;
+      try{
+        await fb.deleteDoc(fb.doc(fb.db, 'fanart', currentDocId));
+        const card = grid.querySelector(`[data-id="${currentDocId}"]`);
+        if(card) card.remove();
+        closeLightbox();
+        if(!grid.children.length) emptyMsg.hidden = false;
+      }catch(err){
+        console.error('delete failed:', err);
+        alert('削除に失敗しました。時間をおいて再度お試しください。');
+      }
+    });
+
+    // 貼り付けられたURLが「YouTube」「直接の動画ファイル」「画像」のどれかを判定し、
+    // それぞれに適した表示用HTMLを組み立てる。
+    // (X/Twitterの動画は、公式の埋め込みスクリプトが重いため、現時点では非対応。)
+    function youtubeEmbedUrl(url){
+      let id = null;
+      let m = url.match(/(?:youtube\.com\/watch\?v=|youtube\.com\/shorts\/|youtu\.be\/)([\w-]{11})/);
+      if(m) id = m[1];
+      return id ? `https://www.youtube.com/embed/${id}` : null;
+    }
+    function mediaHtml(url, altText){
+      const yt = youtubeEmbedUrl(url);
+      if(yt){
+        return `<iframe src="${yt}" title="${altText}" style="width:100%;height:100%;border:0;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy"></iframe>`;
+      }
+      if(/\.(mp4|webm|mov)(\?.*)?$/i.test(url)){
+        return `<video src="${url}" controls playsinline style="width:100%;height:100%;object-fit:cover;"></video>`;
+      }
+      return `<img src="${url}" alt="${altText}" loading="lazy" onerror="this.outerHTML='<div class=&quot;lb-img-broken-msg&quot;>画像を読み込めませんでした<br>(リンク元が削除された可能性があります)</div>'">`;
+    }
+
+    function thumbHtml(url, altText){
+      const yt = youtubeEmbedUrl(url);
+      if(yt){
+        const idMatch = url.match(/(?:youtube\.com\/watch\?v=|youtube\.com\/shorts\/|youtu\.be\/)([\w-]{11})/);
+        const thumbUrl = idMatch ? `https://img.youtube.com/vi/${idMatch[1]}/hqdefault.jpg` : '';
+        return `<img src="${thumbUrl}" alt="${altText}" loading="lazy" onerror="this.closest('.fanart-card')?.classList.add('fanart-broken')"><span class="fanart-play-badge">▶</span>`;
+      }
+      if(/\.(mp4|webm|mov)(\?.*)?$/i.test(url)){
+        return `<video src="${url}" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;"></video><span class="fanart-play-badge">▶</span>`;
+      }
+      return `<img src="${url}" alt="${altText}" loading="lazy" onerror="this.closest('.fanart-card')?.classList.add('fanart-broken')">`;
+    }
+
+    function renderCard(item){
+      const card = document.createElement('div');
+      card.className = 'fanart-card reveal in';
+      card.dataset.id = item.id;
+      const favId = 'fanart-' + item.id;
+      card.innerHTML = `
+        <div class="fanart-thumb">
+          ${thumbHtml(item.imageUrl, escapeHtml(item.name || 'ファンアート'))}
+          <span class="fanart-card-fav${FavModule.has(favId) ? ' active' : ''}" data-fav-badge>
+            <svg viewBox="0 0 24 24"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg>
+          </span>
+        </div>
+        <div class="fanart-caption">
+          <span class="fanart-caption-name">${escapeHtml(item.name || '名無しさん')}</span>
+          <span class="fanart-caption-meta">
+            <span class="fanart-mini-like">
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7.5-4.5-9.5-9C.9 8.1 2.4 5 5.6 4.4c2-.4 3.9.5 5 2.1 1.1-1.6 3-2.5 5-2.1C18.9 5 20.4 8.1 18.8 12c-2 4.5-9.5 9-9.5 9z"/></svg>
+              <span>${item.likes || 0}</span>
+            </span>
+          </span>
+        </div>`;
+      card.addEventListener('click', (e)=>{
+        if(e.target.closest('[data-fav-badge]')){
+          e.stopPropagation();
+          const active = FavModule.toggle(favId);
+          card.querySelector('[data-fav-badge]').classList.toggle('active', active);
+          if(active && typeof AchievementModule !== 'undefined' && AchievementModule.isLoggedIn()){
+            AchievementModule.unlock('first-favorite');
+            if(FavModule.size() >= 5) AchievementModule.unlock('collector');
+            if(FavModule.size() >= 10) AchievementModule.unlock('mega-collector');
+          }
+          return;
+        }
+        openLightbox(item);
+      });
+      grid.appendChild(card);
+    }
+
+    async function loadGallery(){
+      if(!fb || !fb.ready){ loadingMsg.textContent = '読み込みに失敗しました。時間をおいて再度お試しください。'; return; }
+      grid.innerHTML = '';
+      emptyMsg.hidden = true;
+      loadingMsg.hidden = false;
+      try{
+        const q = fb.query(
+          fb.collection(fb.db, 'fanart'),
+          fb.where('isR18', '==', currentTab === 'r18'),
+          fb.orderBy('createdAt', 'desc'),
+          fb.limit(60)
+        );
+        const snap = await fb.getDocs(q);
+        loadingMsg.hidden = true;
+        if(snap.empty){ emptyMsg.hidden = false; return; }
+        snap.forEach(d => renderCard({ id:d.id, ...d.data() }));
+      }catch(err){
+        console.error('gallery load failed:', err);
+        if(window.isQuotaError(err)){
+          window.onQuotaExceeded();
+          loadingMsg.textContent = '現在アクセスが集中しているため、一覧を表示できません。時間をおいて再度お試しください。';
+        }else{
+          loadingMsg.textContent = '読み込みに失敗しました。時間をおいて再度お試しください。';
+        }
+      }
+    }
+
+    // 通常 / R18 タブの切り替えと、R18側の年齢確認。
+    const tabNormal = document.getElementById('fanartTabNormal');
+    const tabR18 = document.getElementById('fanartTabR18');
+    const ageGate = document.getElementById('fanartAgeGate');
+    const ageYesBtn = document.getElementById('fanartAgeYes');
+    const ageNoBtn = document.getElementById('fanartAgeNo');
+    let currentTab = 'normal';
+
+    function isAgeVerified(){
+      try{ return sessionStorage.getItem('fanart-age-verified') === 'true'; }catch(e){ return false; }
+    }
+    function setAgeVerified(){
+      try{ sessionStorage.setItem('fanart-age-verified', 'true'); }catch(e){}
+    }
+    function switchTab(tab){
+      currentTab = tab;
+      tabNormal.classList.toggle('active', tab === 'normal');
+      tabR18.classList.toggle('active', tab === 'r18');
+      tabNormal.setAttribute('aria-selected', tab === 'normal' ? 'true' : 'false');
+      tabR18.setAttribute('aria-selected', tab === 'r18' ? 'true' : 'false');
+      loadGallery();
+    }
+    tabNormal.addEventListener('click', ()=> switchTab('normal'));
+    tabR18.addEventListener('click', ()=>{
+      if(isAgeVerified()){ switchTab('r18'); }
+      else{ ageGate.hidden = false; }
+    });
+    ageYesBtn.addEventListener('click', ()=>{
+      setAgeVerified();
+      ageGate.hidden = true;
+      switchTab('r18');
+    });
+    ageNoBtn.addEventListener('click', ()=>{
+      ageGate.hidden = true;
+      switchTab('normal');
+    });
+
+    // 投稿者のBAN状態を確認する。BANされている場合、投稿できないようにする。
+    async function isCurrentUserBanned(){
+      const siteFb = window.__siteFirebase;
+      if(!siteFb || !siteFb.ready || !siteFb.auth || !siteFb.auth.currentUser) return false;
+      try{
+        const snap = await siteFb.getDoc(siteFb.doc(siteFb.db, 'bannedUsers', siteFb.auth.currentUser.uid));
+        return snap.exists();
+      }catch(err){ console.error('ban check failed:', err); return false; }
+    }
+
+    form.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const url = urlInput.value.trim();
+      if(!/^https?:\/\/.+/i.test(url)){ return; }
+      if(!fb || !fb.ready){ alert('現在投稿を受け付けられません。時間をおいて再度お試しください。'); return; }
+      if(window.__quotaExceeded){
+        alert('現在アクセスが集中しているため、投稿を一時的に停止しています。時間をおいて再度お試しください。');
+        return;
+      }
+      submitBtn.disabled = true;
+      if(await isCurrentUserBanned()){
+        alert('このアカウントは投稿を停止されています。');
+        submitBtn.disabled = false;
+        return;
+      }
+      const isR18 = document.getElementById('fanartIsR18').checked;
+      const siteFb = window.__siteFirebase;
+      const authorUid = (siteFb && siteFb.auth && siteFb.auth.currentUser) ? siteFb.auth.currentUser.uid : null;
+      try{
+        const docRef = await fb.addDoc(fb.collection(fb.db, 'fanart'), {
+          imageUrl: url,
+          name: nameInput.value.trim().slice(0,40),
+          likes: 0,
+          isR18: isR18,
+          authorUid: authorUid,
+          createdAt: fb.serverTimestamp()
+        });
+        if((isR18 && currentTab === 'r18') || (!isR18 && currentTab === 'normal')){
+          renderCard({ id:docRef.id, imageUrl:url, name:nameInput.value.trim(), likes:0, isR18:isR18, authorUid:authorUid, createdAt:new Date() });
+          emptyMsg.hidden = true;
+        }
+        if(authorUid && typeof AchievementModule !== 'undefined'){
+          AchievementModule.unlock('fanart-poster');
+          AchievementModule.unlockUnique('first-fanart', 5);
+        }
+        form.reset();
+      }catch(err){
+        console.error('submit failed:', err);
+        alert('投稿に失敗しました。画像のURLをご確認の上、もう一度お試しください。');
+      }finally{
+        submitBtn.disabled = false;
+      }
+    });
+
+    function initWhenReady(){
+      fb = window.__fanartFirebase;
+      loadGallery();
+    }
+    if(window.__fanartFirebase && window.__fanartFirebase.ready !== undefined){
+      initWhenReady();
+    }else{
+      document.addEventListener('firebase-ready', initWhenReady, { once:true });
+    }
+  }catch(err){ console.error('fanart init failed:', err); }
+
+  try{
+    const loginBtn = document.getElementById('loginBtn');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const loginAccount = document.getElementById('loginAccount');
+    const loginAvatar = document.getElementById('loginAvatar');
+    const loginName = document.getElementById('loginName');
+    const editNicknameBtn = document.getElementById('editNicknameBtn');
+    const nicknameEditRow = document.getElementById('nicknameEditRow');
+    const nicknameInput = document.getElementById('nicknameInput');
+    const nicknameSaveBtn = document.getElementById('nicknameSaveBtn');
+    const nicknameNote = document.getElementById('nicknameNote');
+
+    let currentNickname = null;
+    window.getSiteNickname = function(){ return currentNickname; };
+
+    function applyAuthUi(user){
+      if(user){
+        loginBtn.hidden = true;
+        loginAccount.hidden = false;
+        loginAvatar.src = user.photoURL || '';
+        loginName.textContent = currentNickname || user.displayName || user.email || '';
+        nicknameNote.hidden = !!currentNickname;
+        // ファンアートの「お名前」欄が空欄のままなら、ニックネームを自動で入れておく(手入力で上書き可能)。
+        const nameField = document.getElementById('fanartName');
+        if(nameField && !nameField.value.trim() && currentNickname){
+          nameField.value = currentNickname;
+        }
+      }else{
+        loginBtn.hidden = false;
+        loginAccount.hidden = true;
+        nicknameEditRow.hidden = true;
+        nicknameNote.hidden = true;
+        currentNickname = null;
+      }
+    }
+
+    function updateTitleBadge(){
+      const badge = document.getElementById('titleBadge');
+      if(!badge) return;
+      const titleId = (typeof AchievementModule !== 'undefined') ? AchievementModule.getTitle() : null;
+      const def = titleId ? window.ACHIEVEMENTS.find(a => a.id === titleId) : null;
+      badge.classList.remove('unique', 'top-rank');
+      if(def){
+        badge.textContent = '【' + def.name + '】';
+        if(def.type === 'unique') badge.classList.add('unique');
+        if(def.topRank) badge.classList.add('top-rank');
+        badge.hidden = false;
+      }else{
+        badge.hidden = true;
+      }
+    }
+
+    async function loadNickname(uid){
+      const fb = window.__siteFirebase;
+      if(!fb || !fb.ready) return;
+      try{
+        const snap = await fb.getDoc(fb.doc(fb.db, 'users', uid));
+        currentNickname = (snap.exists() && snap.data().nickname) ? snap.data().nickname : null;
+        if(snap.exists() && snap.data().theme){
+          applyTheme(snap.data().theme);
+          try{ localStorage.setItem('site-theme', snap.data().theme); }catch(e){}
+        }
+      }catch(err){ console.error('failed to load nickname:', err); }
+    }
+
+    editNicknameBtn.addEventListener('click', ()=>{
+      nicknameInput.value = currentNickname || '';
+      nicknameEditRow.hidden = false;
+      nicknameInput.focus();
+    });
+    let nicknameChangeCount = 0;
+    async function saveNickname(){
+      const fb = window.__siteFirebase;
+      if(!fb || !fb.ready || !fb.auth.currentUser) return;
+      const value = nicknameInput.value.trim().slice(0, 20);
+      try{
+        await fb.setDoc(fb.doc(fb.db, 'users', fb.auth.currentUser.uid), { nickname: value || null }, { merge:true });
+        currentNickname = value || null;
+        loginName.textContent = currentNickname || fb.auth.currentUser.displayName || fb.auth.currentUser.email || '';
+        nicknameNote.hidden = !!currentNickname;
+        nicknameEditRow.hidden = true;
+        nicknameChangeCount++;
+        if(typeof AchievementModule !== 'undefined'){
+          AchievementModule.unlock('nickname-set');
+          if(nicknameChangeCount >= 3) AchievementModule.unlock('nickname-changer');
+        }
+      }catch(err){ console.error('failed to save nickname:', err); }
+    }
+    nicknameSaveBtn.addEventListener('click', saveNickname);
+    nicknameInput.addEventListener('keydown', (e)=>{ if(e.key === 'Enter') saveNickname(); });
+
+    function wireAuth(){
+      const fb = window.__siteFirebase;
+      if(!fb || !fb.ready) return;
+      loginBtn.addEventListener('click', async ()=>{
+        try{ await fb.signInWithPopup(fb.auth, fb.provider); }
+        catch(err){ console.error('sign-in failed:', err); }
+      });
+      logoutBtn.addEventListener('click', async ()=>{
+        try{ await fb.signOut(fb.auth); }
+        catch(err){ console.error('sign-out failed:', err); }
+      });
+      fb.onAuthStateChanged(fb.auth, async (user)=>{
+        if(user) await loadNickname(user.uid);
+        applyAuthUi(user);
+        if(typeof FavModule !== 'undefined') FavModule.setUser(user ? user.uid : null);
+        if(typeof AchievementModule !== 'undefined'){
+          if(user){
+            await AchievementModule.setUser(user.uid);
+            await AchievementModule.unlock('first-login');
+            await AchievementModule.unlockUnique('pioneer-1', 1);
+            await AchievementModule.unlockUnique('pioneer-30', 30);
+            const nowHour = new Date().getHours();
+            if(nowHour >= 2 && nowHour < 4) AchievementModule.unlock('night-owl-hour');
+            setTimeout(()=>{ if(AchievementModule.isLoggedIn()) AchievementModule.unlock('idle-master'); }, 10 * 60 * 1000);
+          }else{
+            AchievementModule.setUser(null);
+          }
+          updateTitleBadge();
+        }
+      });
+    }
+    if(window.__siteFirebase && window.__siteFirebase.ready !== undefined){
+      wireAuth();
+    }else{
+      document.addEventListener('site-firebase-ready', wireAuth, { once:true });
+    }
+  }catch(err){ console.error('auth init failed:', err); }
+
+  try{
+    // リアルタイムの在室人数表示。「今、ここに他にも人がいる」ことだけを、そっと伝える。
+    function wirePresence(){
+      const fb = window.__siteFirebase;
+      if(!fb || !fb.ready) return;
+
+      let sessionId;
+      try{
+        sessionId = sessionStorage.getItem('presence-id');
+        if(!sessionId){
+          sessionId = 'p-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+          sessionStorage.setItem('presence-id', sessionId);
+        }
+      }catch(e){ sessionId = 'p-' + Date.now() + '-' + Math.random().toString(36).slice(2); }
+
+      const presenceRef = fb.doc(fb.db, 'presence', sessionId);
+      const PRESENCE_STALE_MS = 45000;
+
+      function touchPresence(){
+        if(window.__quotaExceeded) return;
+        fb.setDoc(presenceRef, { lastSeen: fb.serverTimestamp() }).catch((err)=>{
+          if(window.isQuotaError(err)) window.onQuotaExceeded();
+        });
+      }
+      touchPresence();
+      const heartbeat = setInterval(touchPresence, 20000);
+      let pollTimer = null;
+
+      function leavePresence(){
+        clearInterval(heartbeat);
+        clearInterval(pollTimer);
+        fb.deleteDoc(presenceRef).catch(()=>{});
+      }
+      window.addEventListener('beforeunload', leavePresence);
+      document.addEventListener('visibilitychange', ()=>{
+        if(document.visibilityState === 'visible') touchPresence();
+      });
+
+      const presenceLine = document.getElementById('presenceLine');
+      const presenceText = document.getElementById('presenceText');
+      async function checkPresence(){
+        if(window.__quotaExceeded){
+          presenceLine.hidden = true;
+          clearInterval(heartbeat);
+          clearInterval(pollTimer);
+          return;
+        }
+        try{
+          const snap = await fb.getDocs(fb.collection(fb.db, 'presence'));
+          const now = Date.now();
+          let activeOthers = 0;
+          snap.forEach(d=>{
+            if(d.id === sessionId) return;
+            const data = d.data();
+            const seen = data.lastSeen && data.lastSeen.toMillis ? data.lastSeen.toMillis() : 0;
+            if(now - seen < PRESENCE_STALE_MS) activeOthers++;
+          });
+          if(activeOthers > 0){
+            presenceText.textContent = isEnglish()
+              ? (activeOthers === 1 ? 'Someone else is here right now' : activeOthers + ' others are here right now')
+              : `今、あなたの他に${activeOthers}人がこの場にいます`;
+            presenceLine.hidden = false;
+          }else{
+            presenceLine.hidden = true;
+          }
+        }catch(err){
+          console.error('presence check failed:', err);
+          if(window.isQuotaError(err)) window.onQuotaExceeded();
+        }
+      }
+      checkPresence();
+      pollTimer = setInterval(checkPresence, 25000); // 25秒ごとに、様子を見に行くだけの方式(常時接続はしない)
+    }
+    if(window.__siteFirebase && window.__siteFirebase.ready !== undefined){
+      wirePresence();
+    }else{
+      document.addEventListener('site-firebase-ready', wirePresence, { once:true });
+    }
+  }catch(err){ console.error('presence init failed:', err); }
+
+  try{
+    const TOAST_PREF_KEY = 'achievement-toast-enabled';
+    function isToastEnabled(){
+      try{ return localStorage.getItem(TOAST_PREF_KEY) !== 'off'; }catch(e){ return true; }
+    }
+    function setToastEnabled(enabled){
+      try{ localStorage.setItem(TOAST_PREF_KEY, enabled ? 'on' : 'off'); }catch(e){}
+      [toastToggleBtn, toastToggleBtn2].forEach(btn=>{
+        if(btn) btn.setAttribute('aria-pressed', String(enabled));
+      });
+    }
+    const toastToggleBtn = document.getElementById('achievementToastToggle');
+    const toastToggleBtn2 = document.getElementById('achievementToastToggle2');
+    setToastEnabled(isToastEnabled());
+    [toastToggleBtn, toastToggleBtn2].forEach(btn=>{
+      if(!btn) return;
+      btn.addEventListener('click', ()=>{
+        setToastEnabled(!isToastEnabled());
+      });
+    });
+
+    const toastEl = document.getElementById('achievementToast');
+    const toastNameEl = document.getElementById('achievementToastName');
+    let toastQueue = [];
+    let toastShowing = false;
+
+    function showNextToast(){
+      if(toastShowing || toastQueue.length === 0) return;
+      const def = toastQueue.shift();
+      toastShowing = true;
+      toastEl.hidden = false;
+      toastNameEl.textContent = def.name;
+      requestAnimationFrame(()=>{ requestAnimationFrame(()=>{ toastEl.classList.add('show'); }); });
+      setTimeout(()=>{
+        toastEl.classList.remove('show');
+        setTimeout(()=>{
+          toastEl.hidden = true;
+          toastShowing = false;
+          showNextToast();
+        }, 550);
+      }, 3800);
+    }
+
+    window.addEventListener('achievement-unlocked', (e)=>{
+      if(!isToastEnabled()) return;
+      const def = (window.ACHIEVEMENTS || []).find(a => a.id === e.detail.id);
+      if(!def) return;
+      toastQueue.push(def);
+      showNextToast();
+    });
+  }catch(err){ console.error('achievement toast init failed:', err); }
+</script>
+
+</body>
+</html>
