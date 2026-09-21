@@ -1753,7 +1753,7 @@
       <p class="meta" id="fanartLbMeta"></p>
       <div class="fanart-lb-actions">
         <button type="button" class="fanart-like-btn" id="fanartLikeBtn" aria-label="いいね">
-          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7.5-4.5-9.5-9C.9 8.1 2.4 5 5.6 4.4c2-.4 3.9.5 5 2.1 1.1-1.6 3-2.5 5-2.1C18.9 5 20.4 8.1 18.8 12c-2 4.5-9.5 9-9.5 9z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6.7-4.35-9.3-8.1C1 10.2 1.8 6.9 4.6 5.4c2.2-1.2 4.7-.5 6 1.3l1.4 1.9 1.4-1.9c1.3-1.8 3.8-2.5 6-1.3 2.8 1.5 3.6 4.8 1.9 7.5C18.7 16.65 12 21 12 21z"/></svg>
           <span id="fanartLikeCount">0</span>
         </button>
         <button type="button" class="fanart-fav-btn" id="fanartFavBtn" aria-label="お気に入りに追加" aria-pressed="false">
@@ -1765,7 +1765,7 @@
       </div>
       <div class="lb-comments">
         <p class="lb-comments-label i18n" data-en="Comments">感想・コメント</p>
-        <div id="fanartDiscussThread"></div>
+        <div id="disqus_thread"></div>
       </div>
       <div class="lb-related" id="fanartLbRelated" hidden>
         <p class="lb-related-label i18n" data-en="Related works">関連する投稿</p>
@@ -2483,6 +2483,17 @@
     const rewatchEmpty = document.getElementById('rewatchEmpty');
     const navRewatch = document.getElementById('navRewatch');
 
+    // しおり(閲覧履歴)の項目を押した時に、その作品のページへ移動し、詳細画面まで自動で開く。
+    // 作品の種類ごとに、移動先のページと、「#種類-ID」の形のリンクで、目的の作品を指定する。
+    function rewatchNavigate(entry){
+      const PAGES = { work:'index.html', music:'music.html', novel:'novel.html', movie:'movie.html', fanart:'fanart.html' };
+      const type = PAGES[entry.type] ? entry.type : 'work';
+      const dest = PAGES[type];
+      const here = location.pathname.split('/').pop() || 'index.html';
+      // 今いるページの作品なら、ページを移動せずに、そのまま開く。
+      if(here === dest && typeof window.openItemByKey === 'function' && window.openItemByKey(type, entry.id)) return;
+      window.location.href = dest + '#' + type + '-' + encodeURIComponent(entry.id);
+    }
     function renderRewatchList(){
       const history = getRewatchHistory();
       rewatchList.innerHTML = '';
@@ -2497,11 +2508,8 @@
           : `<div style="position:absolute;inset:0;background:${fallbackColor}"></div>`;
         item.innerHTML = `<div class="rewatch-thumb">${media}</div><p>${escapeHtml(title)}</p>`;
         item.addEventListener('click', ()=>{
-          if(entry.type === 'fanart'){
-            rewatchCtl.close();
-            return; // 既にファンアートページにいるので、シートを閉じるだけ
-          }
-          window.location.href = 'index.html#works';
+          rewatchCtl.close();
+          rewatchNavigate(entry);
         });
         rewatchList.appendChild(item);
       });
@@ -3032,6 +3040,10 @@
         if(!ids.includes(id)){ ids.push(id); localStorage.setItem('fanart-liked', JSON.stringify(ids)); }
       }catch(e){}
     }
+    // 「押した」記録を取り消す(BAN・混雑防止の確認で止められた時に、元に戻すため)。
+    function unmarkLiked(id){
+      try{ localStorage.setItem('fanart-liked', JSON.stringify(likedIds().filter(x => x !== id))); }catch(e){}
+    }
 
     function renderCommentsFor(docId, title){
       // コメント欄(Disqus)は外部サービスなので、失敗しても、作品の詳細を開く処理を止めないようにする。
@@ -3132,21 +3144,38 @@
     document.addEventListener('keydown', (e)=>{ if(e.key === 'Escape' && lightbox.classList.contains('open')) closeLightbox(); });
 
     likeBtn.addEventListener('click', async ()=>{
-      if(!currentDocId || !fb || !fb.ready) return;
-      if(likedIds().includes(currentDocId)) return; // 1人1回まで
-      if(typeof window.isCurrentUserBanned === 'function' && await window.isCurrentUserBanned()) return; // BAN済みなら、そっと何も起きないようにする
-      const siteFbCheck = window.__siteFirebase;
-      const loggedIn = !!(siteFbCheck && siteFbCheck.auth && siteFbCheck.auth.currentUser);
-      const okToProceed = await window.checkSiteWriteRateLimit('writeRateLimit', loggedIn);
-      if(!okToProceed) return; // 混雑中は、そっと何も起きないようにする(いいね程度でアラートは出さない)
+      const likedId = currentDocId; // 確認の通信を待つ間に、別の投稿へ切り替わっても、押した投稿に記録するため
+      if(!likedId || !fb || !fb.ready) return;
+      if(likedIds().includes(likedId)) return; // 1人1回まで
+      // 先に、画面と「押した」記録を更新する(すぐに反映され、連打しても二重に通らない)。
+      // そのあと、BAN・混雑防止の確認で止められた場合は、元に戻す。
       likeBtn.classList.add('liked');
       currentLikes += 1;
       likeCountEl.textContent = currentLikes;
-      markLiked(currentDocId);
+      markLiked(likedId);
+      const siteFbCheck = window.__siteFirebase;
+      const loggedIn = !!(siteFbCheck && siteFbCheck.auth && siteFbCheck.auth.currentUser);
+      let blocked = false;
       try{
-        await fb.updateDoc(fb.doc(fb.db, 'fanart', currentDocId), { likes: fb.increment(1) });
-        const card = grid.querySelector(`[data-id="${currentDocId}"] .fanart-mini-like span`);
-        if(card) card.textContent = currentLikes;
+        if(typeof window.isCurrentUserBanned === 'function' && await window.isCurrentUserBanned()){
+          blocked = true; // BAN済みなら、そっと何も起きないようにする
+        }else{
+          blocked = !(await window.checkSiteWriteRateLimit('writeRateLimit', loggedIn)); // 混雑中も、そっと何も起きないようにする(いいね程度でアラートは出さない)
+        }
+      }catch(err){ blocked = false; }
+      if(blocked){
+        unmarkLiked(likedId);
+        if(currentDocId === likedId){
+          likeBtn.classList.remove('liked');
+          currentLikes = Math.max(0, currentLikes - 1);
+          likeCountEl.textContent = currentLikes;
+        }
+        return;
+      }
+      try{
+        await fb.updateDoc(fb.doc(fb.db, 'fanart', likedId), { likes: fb.increment(1) });
+        const card = grid.querySelector(`[data-id="${likedId}"] .fanart-mini-like span`);
+        if(card) card.textContent = (currentDocId === likedId) ? currentLikes : ((parseInt(card.textContent, 10) || 0) + 1);
       }catch(err){ console.error('like failed:', err); }
     });
 
@@ -3174,6 +3203,7 @@
       if(!window.confirm('この投稿を削除しますか?この操作は取り消せません。')) return;
       try{
         await fb.deleteDoc(fb.doc(fb.db, 'fanart', currentDocId));
+        clearGalleryCache();
         const card = grid.querySelector(`[data-id="${currentDocId}"]`);
         if(card) card.remove();
         closeLightbox();
@@ -3320,7 +3350,7 @@
           <span class="fanart-caption-name">${escapeHtml(item.name || '名無しさん')}${item.authorUid && item.authorUid === OWNER_UID ? '<span class="fanart-owner-badge" title="運営者本人の投稿です">運営者</span>' : ''}</span>
           <span class="fanart-caption-meta">
             <span class="fanart-mini-like">
-              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7.5-4.5-9.5-9C.9 8.1 2.4 5 5.6 4.4c2-.4 3.9.5 5 2.1 1.1-1.6 3-2.5 5-2.1C18.9 5 20.4 8.1 18.8 12c-2 4.5-9.5 9-9.5 9z"/></svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6.7-4.35-9.3-8.1C1 10.2 1.8 6.9 4.6 5.4c2.2-1.2 4.7-.5 6 1.3l1.4 1.9 1.4-1.9c1.3-1.8 3.8-2.5 6-1.3 2.8 1.5 3.6 4.8 1.9 7.5C18.7 16.65 12 21 12 21z"/></svg>
               <span>${normalizeLikes(item.likes)}</span>
             </span>
           </span>
@@ -3357,6 +3387,13 @@
         if(Date.now() - cached.savedAt > GALLERY_CACHE_MS) return null;
         return cached.items;
       }catch(e){ return null; }
+    }
+    // 削除・投稿のあとは、一覧の一時保存を消して、次に読み込む時に、必ず最新の内容を取得する
+    // (消さないと、削除した投稿が、15秒間、復活して見えてしまう)。
+    function clearGalleryCache(){
+      try{
+        Object.keys(sessionStorage).filter(k => k.indexOf('fanart-cache-') === 0).forEach(k => sessionStorage.removeItem(k));
+      }catch(e){}
     }
     function setGalleryCache(tab, items){
       try{ sessionStorage.setItem('fanart-cache-' + tab, JSON.stringify({ savedAt: Date.now(), items })); }catch(e){}
@@ -3471,6 +3508,44 @@
     // ギャラリーの読み込みを待たず、画面を開いた時点で、UIの見た目だけは
     // 先に復元しておく(読み込みが遅れても、選択欄の表示がずれないように)。
     window.refreshFanartFilterSort();
+
+    // しおり(閲覧履歴)などから、投稿を指定して開く。「#fanart-ID」の形のリンクにも対応する。
+    window.openItemByKey = function(type, id){
+      if(type !== 'fanart') return false;
+      let card = null;
+      try{ card = grid.querySelector('[data-id="' + ((window.CSS && CSS.escape) ? CSS.escape(id) : id) + '"]'); }catch(e){}
+      if(!card) return false;
+      card.click();
+      return true;
+    };
+    // 今の一覧に無い投稿(古い投稿・別のタブの投稿)は、その1件だけを読み込んで開く。
+    async function openFanartByFetch(id){
+      if(!fb || !fb.ready) return;
+      try{
+        const snap = await fb.getDoc(fb.doc(fb.db, 'fanart', id));
+        if(!snap.exists()) return;
+        const data = snap.data();
+        if(data.isR18) return; // R18は、年齢確認を通らずに開かない
+        if(!isAllowedMediaUrl(data.imageUrl)) return;
+        const createdAt = data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().getTime() : new Date(data.createdAt).getTime()) : 0;
+        openLightbox({ id: snap.id, ...data, createdAt });
+      }catch(err){ console.error('open fanart by id failed:', err); }
+    }
+    function openFanartFromHash(){
+      const m = location.hash.match(/^#fanart-(.+)$/);
+      if(!m) return;
+      let id;
+      try{ id = decodeURIComponent(m[1]); }catch(e){ return; }
+      let tries = 0;
+      const attempt = ()=>{
+        if(window.openItemByKey('fanart', id)) return;
+        if(++tries < 6){ setTimeout(attempt, 500); return; }
+        openFanartByFetch(id);
+      };
+      attempt();
+    }
+    window.addEventListener('hashchange', openFanartFromHash);
+    openFanartFromHash();
 
     // Share room / ファンアート / R18 タブの切り替えと、R18側の年齢確認。
     const tabShareroom = document.getElementById('fanartTabShareroom');
@@ -3749,6 +3824,7 @@
           pickupExcluded: pickupExcluded,
           createdAt: fb.serverTimestamp()
         });
+        clearGalleryCache(); // 投稿の直後に再読み込みしても、新しい投稿が消えて見えないように
         // 今見えている一覧(現在のタブ)に該当する投稿だった場合だけ、その場に追加表示する。
         const matchesCurrentView = currentTab === 'r18' ? isR18 : (!isR18 && currentTab === postCategory);
         if(matchesCurrentView){

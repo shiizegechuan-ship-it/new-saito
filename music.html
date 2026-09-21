@@ -1382,18 +1382,18 @@
       <audio id="musicLbAudio" controls preload="none" style="width:100%;margin-bottom:18px;"></audio>
       <div class="lb-actions-row">
         <button type="button" class="music-fav-btn" id="musicFavBtn" aria-label="お気に入りに追加" aria-pressed="false">
-          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7.5-4.5-9.5-9C.9 8.1 2.4 5 5.6 4.4c2-.4 3.9.5 5 2.1 1.1-1.6 3-2.5 5-2.1C18.9 5 20.4 8.1 18.8 12c-2 4.5-9.5 9-9.5 9z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6.7-4.35-9.3-8.1C1 10.2 1.8 6.9 4.6 5.4c2.2-1.2 4.7-.5 6 1.3l1.4 1.9 1.4-1.9c1.3-1.8 3.8-2.5 6-1.3 2.8 1.5 3.6 4.8 1.9 7.5C18.7 16.65 12 21 12 21z"/></svg>
           <span class="i18n" data-en="Favorite">お気に入り</span>
         </button>
         <button type="button" class="music-like-btn" id="musicLikeBtn" aria-label="いいね">
-          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7.5-4.5-9.5-9C.9 8.1 2.4 5 5.6 4.4c2-.4 3.9.5 5 2.1 1.1-1.6 3-2.5 5-2.1C18.9 5 20.4 8.1 18.8 12c-2 4.5-9.5 9-9.5 9z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6.7-4.35-9.3-8.1C1 10.2 1.8 6.9 4.6 5.4c2.2-1.2 4.7-.5 6 1.3l1.4 1.9 1.4-1.9c1.3-1.8 3.8-2.5 6-1.3 2.8 1.5 3.6 4.8 1.9 7.5C18.7 16.65 12 21 12 21z"/></svg>
           <span id="musicLikeCount">0</span>
         </button>
       </div>
       <p id="musicLbDesc"></p>
       <div class="lb-comments">
         <p class="lb-comments-label i18n" data-en="Comments">感想・コメント</p>
-        <div id="musicDiscussThread"></div>
+        <div id="disqus_thread"></div>
       </div>
       <div class="lb-related" id="musicLbRelated" hidden>
         <p class="lb-related-label i18n" data-en="Related works">関連する曲</p>
@@ -2111,6 +2111,18 @@
     };
 
     const REWATCH_KEY = 'portfolio-rewatch-history';
+    const REWATCH_MAX = 12;
+    function saveRewatchHistory(list){
+      try{ localStorage.setItem(REWATCH_KEY, JSON.stringify(list)); }catch(e){}
+    }
+    // entry: { id, type, title, titleEn, color, img }
+    window.recordRewatch = function(entry){
+      if(!entry || !entry.id || !entry.type) return;
+      let list = getRewatchHistory().filter(x => !(x.id === entry.id && x.type === entry.type));
+      list.unshift(entry);
+      if(list.length > REWATCH_MAX) list = list.slice(0, REWATCH_MAX);
+      saveRewatchHistory(list);
+    };
     function getRewatchHistory(){
       try{ return JSON.parse(localStorage.getItem(REWATCH_KEY) || '[]'); }catch(e){ return []; }
     }
@@ -2120,6 +2132,17 @@
     const rewatchEmpty = document.getElementById('rewatchEmpty');
     const navRewatch = document.getElementById('navRewatch');
 
+    // しおり(閲覧履歴)の項目を押した時に、その作品のページへ移動し、詳細画面まで自動で開く。
+    // 作品の種類ごとに、移動先のページと、「#種類-ID」の形のリンクで、目的の作品を指定する。
+    function rewatchNavigate(entry){
+      const PAGES = { work:'index.html', music:'music.html', novel:'novel.html', movie:'movie.html', fanart:'fanart.html' };
+      const type = PAGES[entry.type] ? entry.type : 'work';
+      const dest = PAGES[type];
+      const here = location.pathname.split('/').pop() || 'index.html';
+      // 今いるページの作品なら、ページを移動せずに、そのまま開く。
+      if(here === dest && typeof window.openItemByKey === 'function' && window.openItemByKey(type, entry.id)) return;
+      window.location.href = dest + '#' + type + '-' + encodeURIComponent(entry.id);
+    }
     function renderRewatchList(){
       const history = getRewatchHistory();
       rewatchList.innerHTML = '';
@@ -2137,7 +2160,8 @@
           : `<div style="position:absolute;inset:0;background:${escapeHtml(fallbackColor)}"></div>`;
         item.innerHTML = `<div class="rewatch-thumb">${media}</div><p>${escapeHtml(title)}</p>`;
         item.addEventListener('click', ()=>{
-          window.location.href = entry.type === 'fanart' ? 'fanart.html' : 'index.html#works';
+          rewatchCtl.close();
+          rewatchNavigate(entry);
         });
         rewatchList.appendChild(item);
       });
@@ -2602,6 +2626,10 @@
         if(!ids.includes(id)){ ids.push(id); localStorage.setItem('music-liked', JSON.stringify(ids)); }
       }catch(e){}
     }
+    // 「押した」記録を取り消す(BAN・混雑防止の確認で止められた時に、元に戻すため)。
+    function unmarkMusicLiked(id){
+      try{ localStorage.setItem('music-liked', JSON.stringify(likedMusicIds().filter(x => x !== id))); }catch(e){}
+    }
     const likeBtn = document.getElementById('musicLikeBtn');
     const likeCountEl = document.getElementById('musicLikeCount');
     let currentTrackLikes = 0;
@@ -2619,6 +2647,7 @@
       currentTrackLikes = normalizeLikes(track.likes);
       likeCountEl.textContent = currentTrackLikes;
       likeBtn.classList.toggle('liked', likedMusicIds().includes(track.id));
+      try{ if(typeof recordRewatch === 'function') recordRewatch({ id: track.id, type:'music', title: track.title, color: track.color }); }catch(err){ console.error('rewatch record failed:', err); }
       renderCommentsFor(track.id, track.title);
       try{ renderRelatedTracks(track); }catch(err){ console.error('related items failed:', err); }
       lightbox.classList.add('open');
@@ -2702,23 +2731,37 @@
     window.checkSiteWriteRateLimit = checkSiteWriteRateLimit;
     likeBtn.addEventListener('click', async ()=>{
       const fb = window.__siteFirebase;
-      if(!currentTrackId || !fb || !fb.ready) return;
-      if(likedMusicIds().includes(currentTrackId)) return; // 1人1回まで
-      if(await isCurrentUserBanned()) return;
-      if(!(await checkSiteWriteRateLimit('writeRateLimit'))) return;
+      const likedId = currentTrackId; // 確認の通信を待つ間に、別の作品へ切り替わっても、押した作品に記録するため
+      if(!likedId || !fb || !fb.ready) return;
+      if(likedMusicIds().includes(likedId)) return; // 1人1回まで
+      // 先に、画面と「押した」記録を更新する(すぐに反映され、連打しても二重に通らない)。
+      // そのあと、BAN・混雑防止の確認で止められた場合は、元に戻す。
       likeBtn.classList.add('liked');
       currentTrackLikes += 1;
       likeCountEl.textContent = currentTrackLikes;
-      markMusicLiked(currentTrackId);
+      markMusicLiked(likedId);
+      let blocked = false;
       try{
-        await fb.setDoc(fb.doc(fb.db, 'music', currentTrackId), { likes: fb.increment(1) }, { merge:true });
-        const track = tracks.find(t => t.id === currentTrackId);
-        if(track) track.likes = currentTrackLikes;
-        const card = listEl.querySelector(`.music-card[data-id="${currentTrackId}"]`);
+        blocked = (await isCurrentUserBanned()) || !(await checkSiteWriteRateLimit('writeRateLimit'));
+      }catch(err){ blocked = false; }
+      if(blocked){
+        unmarkMusicLiked(likedId);
+        if(currentTrackId === likedId){
+          likeBtn.classList.remove('liked');
+          currentTrackLikes = Math.max(0, currentTrackLikes - 1);
+          likeCountEl.textContent = currentTrackLikes;
+        }
+        return;
+      }
+      try{
+        await fb.setDoc(fb.doc(fb.db, 'music', likedId), { likes: fb.increment(1) }, { merge:true });
+        const track = tracks.find(t => t.id === likedId);
+        if(track) track.likes = normalizeLikes(track.likes) + 1;
+        const card = listEl.querySelector(`.music-card[data-id="${likedId}"]`);
         if(card){
-          card.dataset.likes = currentTrackLikes;
+          card.dataset.likes = normalizeLikes(track && track.likes);
           const span = card.querySelector('.music-mini-like span');
-          if(span) span.textContent = currentTrackLikes;
+          if(span) span.textContent = card.dataset.likes;
         }
       }catch(err){ console.error('music like failed:', err); }
     });
@@ -2767,11 +2810,11 @@
           <div class="music-cover" style="background:${track.color};"></div>
           <div class="music-card-info">
             <p class="music-card-title">${escapeHtml(track.title)}</p>
-            <p class="music-card-meta">Music / ${track.year} <span class="music-mini-like"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7.5-4.5-9.5-9C.9 8.1 2.4 5 5.6 4.4c2-.4 3.9.5 5 2.1 1.1-1.6 3-2.5 5-2.1C18.9 5 20.4 8.1 18.8 12c-2 4.5-9.5 9-9.5 9z"/></svg><span>${normalizeLikes(track.likes)}</span></span></p>
+            <p class="music-card-meta">Music / ${track.year} <span class="music-mini-like"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6.7-4.35-9.3-8.1C1 10.2 1.8 6.9 4.6 5.4c2.2-1.2 4.7-.5 6 1.3l1.4 1.9 1.4-1.9c1.3-1.8 3.8-2.5 6-1.3 2.8 1.5 3.6 4.8 1.9 7.5C18.7 16.65 12 21 12 21z"/></svg><span>${normalizeLikes(track.likes)}</span></span></p>
             <audio controls preload="none" src="${escapeHtml(track.audio)}"></audio>
           </div>
           <button type="button" class="music-card-fav${FavModule.has(favId) ? ' active' : ''}" aria-label="お気に入りに追加">
-            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7.5-4.5-9.5-9C.9 8.1 2.4 5 5.6 4.4c2-.4 3.9.5 5 2.1 1.1-1.6 3-2.5 5-2.1C18.9 5 20.4 8.1 18.8 12c-2 4.5-9.5 9-9.5 9z"/></svg>
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6.7-4.35-9.3-8.1C1 10.2 1.8 6.9 4.6 5.4c2.2-1.2 4.7-.5 6 1.3l1.4 1.9 1.4-1.9c1.3-1.8 3.8-2.5 6-1.3 2.8 1.5 3.6 4.8 1.9 7.5C18.7 16.65 12 21 12 21z"/></svg>
           </button>`;
         card.querySelector('.music-card-fav').addEventListener('click', (e)=>{
           e.stopPropagation();
@@ -2829,6 +2872,29 @@
       applyMusicFilterSort();
     };
     window.refreshMusicFilterSort();
+
+    // しおり(閲覧履歴)などから、作品を指定して開く。「#music-ID」の形のリンクにも対応する。
+    window.openItemByKey = function(type, id){
+      if(type !== 'music') return false;
+      const found = tracks.find(x => x.id === id);
+      if(!found) return false;
+      openLightbox(found);
+      return true;
+    };
+    function openMusicFromHash(){
+      const m = location.hash.match(/^#music-(.+)$/);
+      if(!m) return;
+      let id;
+      try{ id = decodeURIComponent(m[1]); }catch(e){ return; }
+      let tries = 0;
+      const attempt = ()=>{
+        if(window.openItemByKey('music', id)) return;
+        if(++tries < 12) setTimeout(attempt, 500); // 追加された作品の読み込みが終わるまで、少し待って、探し直す
+      };
+      attempt();
+    }
+    window.addEventListener('hashchange', openMusicFromHash);
+    openMusicFromHash();
 
     // admin.htmlから追加された曲を、後から読み込んで反映する。
     // また、admin.htmlで「削除」された、もともとコードに書かれている曲は、

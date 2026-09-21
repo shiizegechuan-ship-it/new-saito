@@ -2048,6 +2048,17 @@
     const rewatchEmpty = document.getElementById('rewatchEmpty');
     const navRewatch = document.getElementById('navRewatch');
 
+    // しおり(閲覧履歴)の項目を押した時に、その作品のページへ移動し、詳細画面まで自動で開く。
+    // 作品の種類ごとに、移動先のページと、「#種類-ID」の形のリンクで、目的の作品を指定する。
+    function rewatchNavigate(entry){
+      const PAGES = { work:'index.html', music:'music.html', novel:'novel.html', movie:'movie.html', fanart:'fanart.html' };
+      const type = PAGES[entry.type] ? entry.type : 'work';
+      const dest = PAGES[type];
+      const here = location.pathname.split('/').pop() || 'index.html';
+      // 今いるページの作品なら、ページを移動せずに、そのまま開く。
+      if(here === dest && typeof window.openItemByKey === 'function' && window.openItemByKey(type, entry.id)) return;
+      window.location.href = dest + '#' + type + '-' + encodeURIComponent(entry.id);
+    }
     function renderRewatchList(){
       const history = getRewatchHistory();
       rewatchList.innerHTML = '';
@@ -2065,7 +2076,8 @@
           : `<div style="position:absolute;inset:0;background:${escapeHtml(fallbackColor)}"></div>`;
         item.innerHTML = `<div class="rewatch-thumb">${media}</div><p>${escapeHtml(title)}</p>`;
         item.addEventListener('click', ()=>{
-          window.location.href = entry.type === 'fanart' ? 'fanart.html' : 'index.html#works';
+          rewatchCtl.close();
+          rewatchNavigate(entry);
         });
         rewatchList.appendChild(item);
       });

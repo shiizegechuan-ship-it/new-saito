@@ -1830,7 +1830,7 @@
     .lightbox, #mailModal, .mail-btn, .fav-wrap, .work-comment-count,
     .works-search, .lb-comments, .hero-pattern, .shippou-bg, .seigaiha,
     .asanoha-divider, .tategaki, .press-fill::before,
-    #discussThread, .rain-ripples, .click-stamp{
+    #disqus_thread, .rain-ripples, .click-stamp{
       display:none !important;
     }
     *{ animation:none !important; transition:none !important; box-shadow:none !important; }
@@ -2354,7 +2354,7 @@
       </div>
       <div class="lb-comments">
         <p class="lb-comments-label i18n" data-en="Comments">感想・コメント</p>
-        <div id="discussThread"></div>
+        <div id="disqus_thread"></div>
       </div>
       <div class="lb-related" id="lbRelated" hidden>
         <p class="lb-related-label i18n" data-en="Related works">関連する作品</p>
@@ -2748,15 +2748,30 @@
     if(likedOnce.has(id)) return;
     const fb = window.__siteFirebase;
     if(!fb || !fb.ready) return;
-    // BAN済みのアカウントと、サイト全体が混雑している間は、そっと何も起きないようにする。
-    if(typeof window.isCurrentUserBanned === 'function' && await window.isCurrentUserBanned()) return;
-    if(typeof window.checkSiteWriteRateLimit === 'function' && !(await window.checkSiteWriteRateLimit('writeRateLimit'))) return;
-    if(likedOnce.has(id)) return; // 確認している間に連打されても、二重に通らないよう、もう一度確かめる
+    // 先に、画面と「押した」記録を更新する(すぐに反映され、連打しても二重に通らない)。
+    // そのあと、BAN・混雑防止の確認で止められた場合は、元に戻す。
+    const card = countEl.closest('.work-card');
     const newVal = (parseInt(countEl.textContent, 10) || 0) + 1;
     countEl.textContent = newVal;
-    countEl.closest('.work-card')?.dataset && (countEl.closest('.work-card').dataset.likes = newVal);
+    if(card && card.dataset) card.dataset.likes = newVal;
     likedOnce.add(id);
     saveLikedOnce(likedOnce);
+    let blocked = false;
+    try{
+      if(typeof window.isCurrentUserBanned === 'function' && await window.isCurrentUserBanned()){
+        blocked = true;
+      }else if(typeof window.checkSiteWriteRateLimit === 'function' && !(await window.checkSiteWriteRateLimit('writeRateLimit'))){
+        blocked = true;
+      }
+    }catch(err){ blocked = false; }
+    if(blocked){
+      likedOnce.delete(id);
+      saveLikedOnce(likedOnce);
+      const back = Math.max(0, newVal - 1);
+      countEl.textContent = back;
+      if(card && card.dataset) card.dataset.likes = back;
+      return;
+    }
     fb.setDoc(fb.doc(fb.db, 'works', id), { likes: fb.increment(1) }, { merge:true })
       .then(()=>{
         if(typeof window.resortWorksIfPopular === 'function') window.resortWorksIfPopular();
@@ -3160,7 +3175,7 @@
       // 表示順は「自分の作品 → Share room(一般作品) → ファンアート作品」の固定順。
       // 該当がない枠は、そのままスキップする。
       const slides = [
-        result.works && { ...result.works, categoryLabel:'自分の作品', categoryLabelEn:'My Work' },
+        result.works && { ...result.works, categoryLabel:'鴛照昧琉の作品', categoryLabelEn:'Oshitemairu\'s Work' },
         result.shareroom && { ...result.shareroom, categoryLabel:'一般作品(Share room)', categoryLabelEn:'Share room' },
         result.fanart && { ...result.fanart, categoryLabel:'ファンアート作品', categoryLabelEn:'Fan Art' }
       ].filter(Boolean);
@@ -3481,6 +3496,17 @@
     const rewatchEmpty = document.getElementById('rewatchEmpty');
     const navRewatch = document.getElementById('navRewatch');
 
+    // しおり(閲覧履歴)の項目を押した時に、その作品のページへ移動し、詳細画面まで自動で開く。
+    // 作品の種類ごとに、移動先のページと、「#種類-ID」の形のリンクで、目的の作品を指定する。
+    function rewatchNavigate(entry){
+      const PAGES = { work:'index.html', music:'music.html', novel:'novel.html', movie:'movie.html', fanart:'fanart.html' };
+      const type = PAGES[entry.type] ? entry.type : 'work';
+      const dest = PAGES[type];
+      const here = location.pathname.split('/').pop() || 'index.html';
+      // 今いるページの作品なら、ページを移動せずに、そのまま開く。
+      if(here === dest && typeof window.openItemByKey === 'function' && window.openItemByKey(type, entry.id)) return;
+      window.location.href = dest + '#' + type + '-' + encodeURIComponent(entry.id);
+    }
     function renderRewatchList(){
       const history = getRewatchHistory();
       rewatchList.innerHTML = '';
@@ -3499,15 +3525,7 @@
         item.innerHTML = `<div class="rewatch-thumb">${media}</div><p>${escapeHtml(title)}</p>`;
         item.addEventListener('click', ()=>{
           rewatchCtl.close();
-          if(entry.type === 'fanart'){
-            window.location.href = 'fanart.html';
-            return;
-          }
-          const idx = (typeof window.worksData !== 'undefined') ? window.worksData.findIndex(x => x.id === entry.id) : -1;
-          if(idx !== -1 && typeof openLightbox === 'function'){
-            document.getElementById('works').scrollIntoView();
-            setTimeout(()=> openLightbox(idx), 400);
-          }
+          rewatchNavigate(entry);
         });
         rewatchList.appendChild(item);
       });
@@ -3999,6 +4017,31 @@
       }
     }, { passive:true });
   })();
+
+  // しおり(閲覧履歴)などから、作品を指定して開く。「#work-ID」の形のリンクにも対応する。
+  window.openItemByKey = function(type, id){
+    if(type !== 'work') return false;
+    const idx = (typeof window.worksData !== 'undefined') ? window.worksData.findIndex(x => x.id === id) : -1;
+    if(idx === -1) return false;
+    const target = document.getElementById('works');
+    if(target) target.scrollIntoView();
+    setTimeout(()=> openLightbox(idx), 400);
+    return true;
+  };
+  function openWorkFromHash(){
+    const m = location.hash.match(/^#work-(.+)$/);
+    if(!m) return;
+    let id;
+    try{ id = decodeURIComponent(m[1]); }catch(e){ return; }
+    let tries = 0;
+    const attempt = ()=>{
+      if(window.openItemByKey('work', id)) return;
+      if(++tries < 12) setTimeout(attempt, 500); // 追加された作品の読み込みが終わるまで、少し待って、探し直す
+    };
+    attempt();
+  }
+  window.addEventListener('hashchange', openWorkFromHash);
+  openWorkFromHash();
   }catch(err){ console.error('works/lightbox init failed:', err); }
 
   try{
@@ -4227,6 +4270,16 @@
     function clearMailDraft(){
       try{ localStorage.removeItem(MAIL_DRAFT_KEY); }catch(e){}
     }
+    // 送信済みの内容(「フォームに戻る」を押した時に、書いた内容を残すため、送信方法を選ぶまで、フォームは消さない)。
+    let lastSubmittedMail = null;
+    function finishMailSubmission(){
+      clearMailDraft();
+      mailForm.reset();
+      ['mailName', 'mailFrom', 'mailBody'].forEach(id=>{
+        document.getElementById(id).dispatchEvent(new Event('input'));
+      });
+      lastSubmittedMail = null;
+    }
     ['mailName', 'mailFrom', 'mailBody'].forEach(id=>{
       document.getElementById(id).addEventListener('input', saveMailDraft);
     });
@@ -4359,6 +4412,14 @@
         return;
       }
 
+      // 「フォームに戻る」を押したあと、同じ内容で、もう一度送信ボタンを押した場合は、
+      // 保存も、連続送信の制限も、すでに済んでいるので、そのまま、送信方法の選択画面へ進む。
+      if(pendingMessage && lastSubmittedMail
+         && lastSubmittedMail.name === name && lastSubmittedMail.from === from && lastSubmittedMail.message === message){
+        showPicker();
+        return;
+      }
+
       // 連続送信への抑止(荒らし対策)。ログイン不要の機能のため、
       // このブラウザだけの簡易的な記録(localStorage)で、連打を防ぐ。
       const MAIL_COOLDOWN_MS = 30000; // 30秒
@@ -4395,11 +4456,9 @@
       const body = message;
 
       pendingMessage = { subject, body };
-      clearMailDraft();
-      mailForm.reset();
-      ['mailName', 'mailFrom', 'mailBody'].forEach(id=>{
-        document.getElementById(id).dispatchEvent(new Event('input'));
-      });
+      lastSubmittedMail = { name, from, message };
+      // 入力した内容は、ここでは消さない(「フォームに戻る」を押した時に、書いた内容が残るように)。
+      // 実際に送信方法を選んだ時点で、消す(finishMailSubmission)。
       const preview = document.getElementById('mailCopyPreview');
       const toLabel = siteLang === 'en' ? 'To: ' : '宛先: ';
       const subjectLabel = siteLang === 'en' ? 'Subject: ' : '件名: ';
@@ -4475,6 +4534,8 @@
         }else{
           tryAppThenFallback(urls.app, urls.web);
         }
+        // 送信方法を選んだので、フォームの内容を消す。
+        finishMailSubmission();
       });
     });
   })();
