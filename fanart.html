@@ -7,8 +7,8 @@
 <script data-goatcounter="https://oshitemairu.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>ファンアート | 鴛照昧琉</title>
-<meta name="description" content="鴛照昧琉のポートフォリオサイト内、ファンアート投稿ページです。">
+<title>Platform | 鴛照昧琉</title>
+<meta name="description" content="鴛照昧琉のポートフォリオサイト内、作品投稿・ファンアートのページです。">
 <meta name="robots" content="index, follow">
 <meta name="theme-color" content="#F6F1E6">
 <meta name="color-scheme" content="light">
@@ -31,6 +31,13 @@
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;600&family=Zen+Kaku+Gothic+New:wght@400&display=swap" onload="this.onload=null;this.rel='stylesheet'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;600&family=Zen+Kaku+Gothic+New:wght@400&display=swap" rel="stylesheet"></noscript>
 <!-- Firebase(ファンアート投稿の保存・いいね機能に使用) -->
+<!-- SRI(改ざん防止)対応の準備。本番運用を開始する前に、正しいハッシュ値を
+     計算し、下の3つのmodulepreloadタグに integrity="sha384-..." を追加してください
+     (手順は firebase-sri-setup.md をご覧ください)。ハッシュ値を入れるまでは、
+     modulepreloadだけが効いた状態(読み込みの高速化のみ)になります。 -->
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js" crossorigin="anonymous">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js" crossorigin="anonymous">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js" crossorigin="anonymous">
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, increment, serverTimestamp, query, where, orderBy, limit, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
@@ -54,8 +61,8 @@
     const db = getFirestore(app);
     const auth = getAuth(app);
     const provider = new GoogleAuthProvider();
-    window.__fanartFirebase = { db, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, increment, serverTimestamp, query, where, orderBy, limit, ready:true };
-    window.__siteFirebase = { auth, db, provider, signInWithPopup, signOut, onAuthStateChanged, doc, getDoc, setDoc, deleteDoc, collection, getDocs, serverTimestamp, runTransaction, ready:true };
+    window.__fanartFirebase = { db, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, increment, serverTimestamp, query, where, orderBy, limit, runTransaction, ready:true };
+    window.__siteFirebase = { auth, db, provider, signInWithPopup, signOut, onAuthStateChanged, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, limit, serverTimestamp, runTransaction, ready:true };
   }catch(err){
     console.error('Firebase init failed:', err);
     window.__fanartFirebase = { ready:false };
@@ -69,9 +76,31 @@
   // これを通さずに直接HTMLに埋め込むと、悪意のある入力によって任意のコードが実行されてしまう
   // (XSS脆弱性)ため、ユーザーが入力した文字列を表示する場所では、必ず使用すること。
   window.escapeHtml = function(str){
-    const div = document.createElement('div');
-    div.textContent = str == null ? '' : String(str);
-    return div.innerHTML;
+    // 属性値(例:src="...")の中で使っても安全なように、
+    // < > & に加えて、二重引用符・単引用符もすべて実体参照に置き換える。
+    if(str == null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  };
+  // HTML用のescapeHtmlとは、目的も置き場所も別のエスケープ。
+  // onerror="...'ここに値を入れる'..." のように、JavaScriptの文字列リテラルの
+  // 「中」に値を埋め込む場合は、HTMLの記号(< > など)ではなく、その文字列リテラル
+  // 自体を壊せる記号(引用符・バックスラッシュ・改行)を無害化する必要がある。
+  // HTML用のエスケープだけでは、この場所は守れない。
+  window.escapeJsString = function(str){
+    if(str == null) return '';
+    return String(str)
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r')
+      .replace(/</g, '\\x3C') // 閉じタグ('<'+'/script>'のような形)で、囲っているタグ自体を破壊できないようにする
+      .replace(/>/g, '\\x3E');
   };
 </script>
 <script>
@@ -89,6 +118,19 @@
   };
 </script>
 <style>
+  .network-status-banner{
+    position:fixed; top:0; left:0; right:0; z-index:9999;
+    padding:9px 16px; text-align:center; font-family:var(--f-gothic);
+    font-size:calc(12.5px * var(--font-scale, 1)); letter-spacing:.04em;
+    color:#fff; transform:translateY(-100%); transition:transform .3s ease;
+  }
+  
+  .network-status-banner.show{ transform:translateY(0); }
+  
+  .network-status-banner.offline{ background:var(--bengara); }
+  
+  .network-status-banner.online{ background:#3E6B4F; }
+  
   
   *{ box-sizing:border-box; }
   
@@ -124,6 +166,13 @@
     display:flex; align-items:center; justify-content:space-between;
     padding:calc(22px + env(safe-area-inset-top)) 6vw 22px;
     transition:background-color .5s ease, padding .4s ease, box-shadow .4s ease;
+    /* Safariはアドレスバーが縮む瞬間、position:fixed要素の
+       位置の再計算が一瞬遅れることがあり、その間メニューバーの下側が
+       欠けて見えることがある。独立した合成レイヤーとして扱わせることで、
+       この遅れを防ぐ、Safariで広く知られている対策。 */
+    -webkit-transform:translateZ(0);
+    transform:translateZ(0);
+    will-change:transform;
   }
   
   header.scrolled{
@@ -176,6 +225,7 @@
   
   .settings-row{
     display:flex; align-items:center; justify-content:space-between; gap:14px;
+    flex-wrap:wrap; row-gap:10px;
   }
   
   .settings-row + .settings-row{ margin-top:18px; }
@@ -216,12 +266,18 @@
   
   .bottom-sheet-handle{
     width:40px; height:4px; border-radius:2px; background:var(--line);
-    margin:12px auto 4px;
+    margin:12px auto 4px; position:relative; touch-action:none;
+  }
+  /* 見た目の太さ(4px)はそのままに、実際に指で掴める範囲だけを広げる */
+  .bottom-sheet-handle::before{
+    content:''; position:absolute; left:50%; top:50%;
+    width:120px; height:44px; transform:translate(-50%,-50%);
   }
   
   .bottom-sheet-head{
     display:flex; align-items:center; justify-content:space-between;
     padding:8px 24px 16px; border-bottom:1px solid var(--line);
+    touch-action:none;
   }
   
   .bottom-sheet-head h3{
@@ -233,15 +289,15 @@
   .bottom-sheet-close svg{ width:14px; height:14px; stroke:var(--sumi); }
   
   .rewatch-list{
-    display:flex; gap:16px; overflow-x:auto; padding:20px 24px 28px;
+    display:grid; grid-template-columns:repeat(2,1fr); gap:18px 16px; padding:20px 24px 28px;
   }
   
   .rewatch-item{
-    flex:none; width:130px; cursor:pointer;
+    width:100%; cursor:pointer;
   }
   
   .rewatch-thumb{
-    width:130px; height:130px; border-radius:6px; position:relative; overflow:hidden;
+    width:100%; aspect-ratio:1; border-radius:6px; position:relative; overflow:hidden;
   }
   
   .rewatch-item p{
@@ -269,9 +325,12 @@
   }
   
   .qr-modal img{
-    display:block; margin:0 auto; border-radius:4px;
+    display:block; margin:0 auto; border-radius:6px;
     width:220px; height:220px; object-fit:contain;
-    background:var(--kinari-2); font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi);
+    background:linear-gradient(135deg, var(--ai) 0%, var(--bengara) 100%);
+    padding:14px;
+    box-sizing:border-box;
+    font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi);
   }
   
   .qr-modal-url{
@@ -591,6 +650,25 @@
     width:32px; height:32px; transition:border-color .3s ease, background .3s ease;
   }
   
+  .bgm-controls{ display:flex; align-items:center; gap:6px; }
+  
+  .bgm-nav-btn{
+    width:24px; height:24px; border-radius:50%; border:1px solid var(--line); background:transparent;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; flex:none;
+    transition:border-color .3s ease;
+  }
+  
+  .bgm-nav-btn:hover{ border-color:var(--bengara); }
+  
+  .bgm-nav-btn svg{ width:11px; height:11px; color:var(--sumi); }
+  
+  .bgm-track-name{
+    text-align:right; font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi);
+    margin-top:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  
+  .bgm-track-name:empty{ display:none; }
+  
   .bottom-sheet-close{ width:32px; height:32px; flex:none; }
   
 
@@ -670,7 +748,7 @@
   .login-account span{ font-size:calc(12px * var(--font-scale, 1)); color:var(--sumi); max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   
   /* Bookmarks:見たもの/実績 タブ */
-  .bookmark-tabs{ display:flex; gap:10px; padding:16px 24px 0; flex:none; }
+  .bookmark-tabs{ display:flex; gap:10px; padding:16px 24px 14px; flex:none; }
   
   .bookmark-tab{
     font-family:var(--f-gothic); font-size:calc(12.5px * var(--font-scale, 1)); letter-spacing:.04em;
@@ -680,7 +758,7 @@
   
   .bookmark-tab.active{ background:var(--bengara); border-color:var(--bengara); color:var(--kinari); }
   
-  .bookmark-panel{ overflow-y:auto; }
+  .bookmark-panel{ overflow-y:auto; flex:1; min-height:0; -webkit-overflow-scrolling:touch; }
   
   .bookmark-panel[hidden]{ display:none; }
   
@@ -884,6 +962,24 @@
   }
   
   /* 画像URLの取得方法ガイド */
+  .fanart-busy-notice{
+    border:1px solid var(--bengara); border-radius:6px; padding:20px; text-align:center;
+    background:var(--kinari-2); margin-bottom:20px;
+  }
+  
+  .fanart-busy-notice p{
+    font-size:calc(13.5px * var(--font-scale, 1)); color:var(--bengara); line-height:1.9;
+  }
+  
+  .fanart-login-required{
+    border:1px solid var(--line); border-radius:6px; padding:24px; text-align:center;
+    background:var(--kinari-2); margin-bottom:20px;
+  }
+  
+  .fanart-login-required p{
+    font-size:calc(13.5px * var(--font-scale, 1)); color:var(--sumi); line-height:1.9; margin-bottom:16px;
+  }
+  
   .fanart-howto{
     max-width:520px; margin-bottom:24px; padding:18px 22px; background:var(--kinari-2);
     border-radius:4px; border:1px solid var(--line); font-size:calc(13px * var(--font-scale, 1));
@@ -943,6 +1039,38 @@
     margin-top:8px; font-size:calc(12px * var(--font-scale, 1)); color:var(--bengara);
   }
   
+  .fanart-pickup-setting{
+    margin-top:14px; border:1px solid var(--line); border-radius:6px; padding:14px 16px;
+    background:var(--kinari-2);
+  }
+  
+  .fanart-pickup-setting summary{
+    cursor:pointer; font-size:calc(12.5px * var(--font-scale, 1)); color:var(--sumi);
+  }
+  
+  .fanart-pickup-hint{
+    font-size:calc(11.5px * var(--font-scale, 1)); color:var(--usuzumi); line-height:1.8;
+    margin:10px 0 12px;
+  }
+  
+  .fanart-pickup-crop-frame{
+    position:relative; width:100%; max-width:320px; aspect-ratio:16/9; overflow:hidden;
+    border-radius:4px; border:1px solid var(--line); cursor:crosshair; background:var(--kinari);
+  }
+  
+  .fanart-pickup-crop-frame img{ width:100%; height:100%; object-fit:cover; pointer-events:none; }
+  
+  .fanart-pickup-crop-marker{
+    position:absolute; width:18px; height:18px; border-radius:50%;
+    border:2px solid var(--kinari); background:var(--bengara); box-shadow:0 0 0 1px var(--bengara);
+    transform:translate(-50%,-50%); pointer-events:none;
+  }
+  
+  .fanart-pickup-exclude{
+    display:flex; align-items:center; gap:8px; margin-top:12px; cursor:pointer;
+    font-size:calc(12.5px * var(--font-scale, 1)); color:var(--sumi);
+  }
+  
   .fanart-submit-btn{
     display:inline-flex; align-items:center; gap:12px; background:none; cursor:pointer;
     font-family:var(--f-mincho);
@@ -971,15 +1099,45 @@
   /* 通常 / R18 タブ */
   .fanart-tabs{ display:flex; gap:10px; margin-bottom:32px; }
   
+  .works-search{ margin-bottom:32px; display:flex; gap:12px; flex-wrap:wrap; }
+  
+  .works-sort-select{
+    flex:none; font-family:var(--f-gothic); font-size:max(16px, calc(13px * var(--font-scale, 1))); color:var(--sumi);
+    background:var(--kinari-2); border:1px solid var(--line); border-radius:20px;
+    padding:8px 14px; cursor:pointer; transition:border-color .3s ease;
+  }
+  
+  .works-sort-select:focus{ outline:none; border-color:var(--bengara); }
+  
+  .fanart-filtered-out{ display:none; }
+  
   .fanart-tab{
     font-family:var(--f-gothic); font-size:calc(13px * var(--font-scale, 1)); letter-spacing:.06em;
     color:var(--usuzumi); background:transparent; border:1px solid var(--line); border-radius:20px;
     padding:8px 22px; cursor:pointer; transition:border-color .3s ease, color .3s ease, background .3s ease;
+    white-space:nowrap;
+  }
+  
+  .fanart-tabs{ flex-wrap:wrap; }
+  
+  @media (max-width:360px){
+    .fanart-tab{ padding:8px 14px; font-size:calc(12px * var(--font-scale, 1)); }
   }
   
   .fanart-tab:hover{ border-color:var(--bengara); color:var(--bengara); }
   
   .fanart-tab.active{ background:var(--bengara); border-color:var(--bengara); color:var(--kinari); }
+  
+  .fanart-tab-desc{
+    font-size:calc(13.5px * var(--font-scale, 1)); color:var(--usuzumi); line-height:1.9;
+    margin-bottom:28px;
+  }
+  
+  .fanart-r18-notice{
+    font-size:calc(13.5px * var(--font-scale, 1)); color:var(--sumi); line-height:1.9;
+    background:var(--kinari-2); border:1px solid var(--line); border-radius:6px;
+    padding:20px; margin-bottom:28px;
+  }
   
 
   /* R18 年齢確認 */
@@ -1063,6 +1221,13 @@
   }
   
   .fanart-caption-name{ font-family:var(--f-mincho); font-size:calc(14px * var(--font-scale, 1)); }
+  
+  .fanart-owner-badge{
+    display:inline-block; margin-left:6px; font-family:var(--f-gothic);
+    font-size:calc(9.5px * var(--font-scale, 1)); letter-spacing:.04em;
+    color:#8A6A1F; background:#FBF0D2; border:1px solid #D9B65C;
+    border-radius:10px; padding:1px 8px; vertical-align:middle;
+  }
   
   .fanart-caption-meta{
     display:flex; align-items:center; gap:10px; flex:none;
@@ -1176,6 +1341,31 @@
     color:var(--usuzumi); margin-bottom:14px;
   }
   
+  .lb-related{ margin-top:24px; padding-top:24px; border-top:1px solid var(--line); }
+  
+  .lb-related-label{
+    font-family:var(--f-mincho); font-size:calc(13px * var(--font-scale, 1)); letter-spacing:.1em;
+    color:var(--usuzumi); margin-bottom:14px;
+  }
+  
+  .lb-related-grid{ display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; }
+  
+  .lb-related-item{
+    cursor:pointer; aspect-ratio:1/1; border-radius:3px; overflow:hidden; position:relative;
+    background:var(--kinari-2); border:1px solid var(--line); transition:opacity .25s ease;
+  }
+  
+  .lb-related-item:hover{ opacity:.8; }
+  
+  .lb-related-item img{ width:100%; height:100%; object-fit:cover; display:block; }
+  
+  .lb-related-item-title{
+    position:absolute; left:0; right:0; bottom:0; padding:6px 8px;
+    background:linear-gradient(to top, rgba(0,0,0,.6), rgba(0,0,0,0));
+    color:#fff; font-size:calc(10.5px * var(--font-scale, 1)); line-height:1.4;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  
   .lb-close{
     position:absolute; top:-16px; right:-16px; width:38px; height:38px;
     background:var(--sumi); border:1px solid var(--kinari);
@@ -1194,6 +1384,7 @@
 </style>
 </head>
 <body>
+<div class="network-status-banner" id="networkStatusBanner" hidden></div>
 <script>
   // 同じブラウザであれば、以前選んだダーク/ライトの状態を引き継ぐ。
   try{
@@ -1202,6 +1393,35 @@
   }catch(e){
     document.documentElement.setAttribute('data-site-theme', 'light');
   }
+</script>
+<script>
+  // 通信が切れた時に、それとなく知らせる。投稿・いいねなどをしようとした瞬間に、
+  // 原因不明のエラーに見えてしまうのを防ぐための、控えめな配慮。
+  (function(){
+    const banner = document.getElementById('networkStatusBanner');
+    if(!banner) return;
+    let hideTimer = null;
+    function showOffline(){
+      clearTimeout(hideTimer);
+      banner.textContent = '通信が切れているようです。投稿やいいねなどの操作ができない場合があります。';
+      banner.className = 'network-status-banner offline show';
+      banner.hidden = false;
+    }
+    function showOnlineBriefly(){
+      clearTimeout(hideTimer);
+      banner.textContent = '通信が回復しました。';
+      banner.className = 'network-status-banner online show';
+      banner.hidden = false;
+      hideTimer = setTimeout(()=>{
+        banner.classList.remove('show');
+        setTimeout(()=>{ banner.hidden = true; }, 300);
+      }, 2500);
+    }
+    window.addEventListener('offline', showOffline);
+    window.addEventListener('online', showOnlineBriefly);
+    // ページを開いた時点で、既にオフラインだった場合にも対応する。
+    if(!navigator.onLine) showOffline();
+  })();
 </script>
 
 <header id="siteHeader">
@@ -1221,9 +1441,8 @@
         </li>
         <li><a href="index.html#profile">Profile<span class="nav-jp">-経歴-</span></a></li>
         <li><a href="index.html#contact">Contact<span class="nav-jp">-連絡先-</span></a></li>
+        <li><a href="fanart.html" aria-current="page">Platform<span class="nav-jp">-ツイート-</span></a></li>
         <li><a href="faq.html">FAQ<span class="nav-jp">-よくある質問-</span></a></li>
-        <li><a href="fanart.html" aria-current="page">Fan Art<span class="nav-jp">-ファンアート-</span></a></li>
-        <li><a href="guidelines.html">Guidelines<span class="nav-jp">-ガイドライン-</span></a></li>
         <li><a href="#" id="navRewatch">Bookmarks<span class="nav-jp">-しおり-</span></a></li>
         <li><a href="#" id="navQr">QR Code<span class="nav-jp">-二次元コード-</span></a></li>
       </ul>
@@ -1288,18 +1507,24 @@
     </div>
     <div class="settings-row">
       <span class="settings-row-label">BGM</span>
-      <button class="bgm-toggle" id="bgmToggle" aria-label="BGMを再生" aria-pressed="false">
-        <svg class="bgm-icon-play" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14l11-7z"/></svg>
-        <svg class="bgm-icon-pause" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M7 5v14M17 5v14"/></svg>
-      </button>
+      <div class="bgm-controls">
+        <button class="bgm-nav-btn" id="bgmPrevBtn" aria-label="前の曲">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM18 6v12l-9-6z"/></svg>
+        </button>
+        <button class="bgm-toggle" id="bgmToggle" aria-label="BGMを再生" aria-pressed="false">
+          <svg class="bgm-icon-play" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14l11-7z"/></svg>
+          <svg class="bgm-icon-pause" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M7 5v14M17 5v14"/></svg>
+        </button>
+        <button class="bgm-nav-btn" id="bgmNextBtn" aria-label="次の曲">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 6v12l9-6z"/></svg>
+        </button>
+      </div>
     </div>
-    <audio id="bgmAudio" loop preload="none">
-      <!-- 実際のBGMファイルが用意できたら、下記のsrcを差し替えてください -->
-      <source src="REPLACE_WITH_YOUR_BGM_FILE.mp3" type="audio/mpeg">
-    </audio>
+    <p class="bgm-track-name" id="bgmTrackName"></p>
+    <audio id="bgmAudio" preload="none"></audio>
   </div>
   <div class="site-search-panel" id="siteSearchPanel" hidden>
-    <input type="search" id="siteSearchInput" class="site-search-input" placeholder="サイト内を検索..." aria-label="サイト内検索">
+    <input type="search" id="siteSearchInput" class="site-search-input" maxlength="20" placeholder="サイト内を検索..." aria-label="サイト内検索">
     <ul class="site-search-results" id="siteSearchResults"></ul>
     <p class="site-search-empty" id="siteSearchEmpty" hidden>一致する内容が見つかりませんでした。</p>
   </div>
@@ -1336,7 +1561,7 @@
     </button>
   </div>
   <div class="bookmark-tabs">
-    <button type="button" class="bookmark-tab active" data-bmtab="viewed">見たもの一覧</button>
+    <button type="button" class="bookmark-tab active" data-bmtab="viewed">閲覧履歴</button>
     <button type="button" class="bookmark-tab" data-bmtab="achievements">実績一覧</button>
   </div>
 
@@ -1379,17 +1604,39 @@
   <section id="fanart" style="padding-top:170px;">
     <div class="wrap">
       <div class="sec-head reveal">
-        <div class="sec-label i18n" data-en="Fan Art">フ ァ ン ア ー ト</div>
+        <div class="sec-label i18n" data-en="Platform">プ ラ ッ ト フ ォ ー ム</div>
         <div>
-          <h2 class="i18n" data-en="Fan Art">ファンアート</h2>
-          <p class="i18n" data-en="Please share your fan art. Paste a direct image link (not a post link) to submit.">みなさんが描いてくださったファンアートを紹介しています。Xなどに投稿された画像のURLを貼り付けてください。</p>
+          <h2 class="i18n" data-en="Platform">Platform</h2>
+          <p class="i18n" data-en="A place to share fan art, and a Share room for posting links to any other artwork.">ファンアートや、その他の作品のリンクを投稿できる場所です。</p>
         </div>
       </div>
 
-      <details class="fanart-howto reveal">
+      <div class="fanart-tabs" role="tablist">
+        <button type="button" class="fanart-tab active" id="fanartTabShareroom" role="tab" aria-selected="true">
+          <span class="i18n" data-en="Share room">Share room</span>
+        </button>
+        <button type="button" class="fanart-tab" id="fanartTabFanart" role="tab" aria-selected="false">
+          <span class="i18n" data-en="Fan Art">ファンアート</span>
+        </button>
+        <button type="button" class="fanart-tab" id="fanartTabR18" role="tab" aria-selected="false">
+          <span class="i18n" data-en="R18">R18</span>
+        </button>
+      </div>
+
+      <p class="fanart-tab-desc i18n" id="fanartTabDesc"
+        data-en="A place to link to any artwork of yours — not limited to fan art of this site. Illustrations, music, writing, anything you'd like to share.">
+        このサイトのファンアートに限らず、ご自身の作品を自由にリンクできる場所です。イラスト・音楽・文章など、紹介したいものを何でも投稿してください。
+      </p>
+
+      <p class="fanart-r18-notice i18n" id="fanartR18Notice" hidden
+        data-en="This is not a separate submission area. To post R18 content, submit it from the Share room or Fan Art tab with the “This work is R18” checkbox turned on — it will then appear here.">
+        ここは独立した投稿場所ではありません。R18作品を投稿する場合は、「Share room」または「ファンアート」のタブから、「この作品はR18(成人向け)指定です」にチェックを入れて投稿してください。ここに表示されるようになります。
+      </p>
+
+      <details class="fanart-howto reveal" id="fanartHowto">
         <summary class="i18n" data-en="How to get the image URL (especially from X)">画像URLの取得方法(主にXの場合)</summary>
         <ol>
-          <li class="i18n" data-en="Post your fan art on X (Twitter) as usual.">いつも通り、Xにファンアートを投稿してください。</li>
+          <li class="i18n" data-en="Post your fan art on X (Twitter) as usual.">いつも通り、Xに投稿してください。</li>
           <li class="i18n" data-en="Open that post, and tap/click on the image itself to view it larger.">その投稿を開き、画像そのものをタップ(クリック)して、拡大表示にします。</li>
           <li class="i18n" data-en="Long-press (or right-click) the enlarged image, and choose “Copy Image Address” / “画像アドレスをコピー”.">拡大された画像を長押し(パソコンの場合は右クリック)し、「画像アドレスをコピー」を選んでください。</li>
           <li class="i18n" data-en="Paste that copied address into the “Image URL” field below.">コピーしたアドレスを、下の「画像のURL」欄に貼り付けてください。</li>
@@ -1405,10 +1652,21 @@
         </p>
       </details>
 
-      <form id="fanartForm" class="fanart-form">
+      <div class="fanart-busy-notice" id="fanartBusyNotice" hidden>
+        <p class="i18n" data-en="The site is currently busy. Please wait a while before posting.">サイトが混み合っております。作品の投稿はしばらくお待ちください。</p>
+      </div>
+
+      <div class="fanart-login-required" id="fanartLoginRequired" hidden>
+        <p class="i18n" data-en="Please log in with Google to post.">投稿には、Googleアカウントでのログインが必要です。</p>
+        <button type="button" class="btn-line press-fill" id="fanartLoginPromptBtn">
+          <span class="i18n" data-en="Log in with Google">Googleでログイン</span>
+        </button>
+      </div>
+
+      <form id="fanartForm" class="fanart-form" hidden>
         <div class="fanart-field">
           <label for="fanartUrl" class="i18n" data-en="Image or Video URL">画像・動画のURL</label>
-          <input type="url" id="fanartUrl" placeholder="https://..." required inputmode="url">
+          <input type="url" id="fanartUrl" maxlength="200" placeholder="https://..." required inputmode="url">
           <div class="fanart-preview" id="fanartPreview" hidden>
             <img id="fanartPreviewImg" alt="プレビュー">
           </div>
@@ -1418,7 +1676,25 @@
         </div>
         <div class="fanart-field">
           <label for="fanartName" class="i18n" data-en="Your name (optional)">お名前・ハンドルネーム(任意)</label>
-          <input type="text" id="fanartName" maxlength="40" placeholder="名無しさん">
+          <input type="text" id="fanartName" maxlength="10" placeholder="名無しさん">
+        </div>
+        <div class="fanart-field">
+          <details class="fanart-pickup-setting" id="fanartPickupSetting" hidden>
+            <summary class="i18n" data-en="Thumbnail setting for when featured in Pickup (optional)">ピックアップに載った際のサムネ設定(任意)</summary>
+            <p class="fanart-pickup-hint i18n" data-en="Pickup shows a 16:9 cropped thumbnail. Tap/click the image below to choose which part stays visible. Not set = center.">
+              ピックアップでは、16:9の枠に切り取られたサムネイルが使われます。下の画像をタップ(クリック)して、見せたい部分を選んでください。設定しない場合は中央が使われます。
+            </p>
+            <div class="fanart-pickup-crop-frame" id="fanartPickupCropFrame">
+              <img id="fanartPickupCropImg" alt="">
+              <div class="fanart-pickup-crop-marker" id="fanartPickupCropMarker" hidden></div>
+            </div>
+            <input type="hidden" id="fanartPickupFocusX" value="50">
+            <input type="hidden" id="fanartPickupFocusY" value="50">
+            <label class="fanart-pickup-exclude">
+              <input type="checkbox" id="fanartPickupExcluded">
+              <span class="i18n" data-en="Don't include this work in Pickup">この作品はピックアップに載せない</span>
+            </label>
+          </details>
         </div>
         <label class="fanart-r18-check">
           <input type="checkbox" id="fanartIsR18">
@@ -1432,15 +1708,19 @@
         </p>
       </form>
 
-      <div class="fanart-tabs" role="tablist">
-        <button type="button" class="fanart-tab active" id="fanartTabNormal" role="tab" aria-selected="true">
-          <span class="i18n" data-en="All Ages">通常</span>
-        </button>
-        <button type="button" class="fanart-tab" id="fanartTabR18" role="tab" aria-selected="false">
-          <span class="i18n" data-en="R18">R18</span>
-        </button>
+      <div class="works-search">
+        <select id="fanartFilter" class="works-sort-select" aria-label="絞り込み">
+          <option value="all">すべて</option>
+          <option value="image">画像のみ</option>
+          <option value="video">動画のみ</option>
+        </select>
+        <select id="fanartSort" class="works-sort-select" aria-label="並び替え">
+          <option value="new">新しい順</option>
+          <option value="old">古い順</option>
+          <option value="popular">人気順</option>
+          <option value="name">投稿者名順</option>
+        </select>
       </div>
-
       <div class="fanart-grid" id="fanartGrid"></div>
       <p class="fanart-empty i18n" data-en="No fan art has been posted yet." id="fanartEmpty" hidden>まだ投稿がありません。</p>
       <p class="fanart-loading i18n" data-en="Loading..." id="fanartLoading">読み込み中…</p>
@@ -1454,7 +1734,7 @@
         </p>
         <div class="fanart-age-gate-buttons">
           <button type="button" class="fanart-age-gate-yes press-fill" id="fanartAgeYes">
-            <span class="i18n" data-en="Yes, I am 18 or older">はい、18歳以上です</span>
+            <span class="i18n" data-en="Yes, I am 18 or older">はい、18歳以上<br>です</span>
           </button>
           <button type="button" class="fanart-age-gate-no press-fill" id="fanartAgeNo">
             <span class="i18n" data-en="No / Go back">いいえ・戻る</span>
@@ -1469,7 +1749,7 @@
   <div class="lb-inner">
     <div class="lb-img" id="fanartLbImg"></div>
     <div class="lb-text">
-      <h3 id="fanartLbName"></h3>
+      <h3 id="fanartLbName"></h3><span class="fanart-owner-badge" id="fanartLbOwnerBadge" hidden>運営者</span>
       <p class="meta" id="fanartLbMeta"></p>
       <div class="fanart-lb-actions">
         <button type="button" class="fanart-like-btn" id="fanartLikeBtn" aria-label="いいね">
@@ -1486,6 +1766,10 @@
       <div class="lb-comments">
         <p class="lb-comments-label i18n" data-en="Comments">感想・コメント</p>
         <div id="fanartDiscussThread"></div>
+      </div>
+      <div class="lb-related" id="fanartLbRelated" hidden>
+        <p class="lb-related-label i18n" data-en="Related works">関連する投稿</p>
+        <div class="lb-related-grid" id="fanartLbRelatedGrid"></div>
       </div>
     </div>
     <div class="lb-close" id="fanartLbClose"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l16 16M20 4L4 20"/></svg></div>
@@ -2036,39 +2320,101 @@
       return ratio >= 0.5 ? Math.round(ratio * 100) : 0;
     }
 
-    const siteIndex = [
-      { section:'Home', sectionEn:'Home', anchor:'index.html#top', external:true,
-        textJa:'手を動かし、静けさを、かたちに。季節がひとつ過ぎるあいだに、ひとつ何かをつくる。急がずに、けれど手を止めずに。',
-        textEn:'Making things by hand, giving shape to quiet. One thing made, each time a season passes.' },
-      { section:'作品', sectionEn:'Works', anchor:'index.html#works', external:true,
-        textJa:'illustration 作品 遠い部屋 灯りをともす 雨のあと 手紙 夜のかたち 庭の記録 イラスト 工芸 写真 文章',
-        textEn:'illustration works craft photography text' },
-      { section:'プロフィール', sectionEn:'Profile', anchor:'index.html#profile', external:true,
-        textJa:'鴛照昧琉 おしてまいる プロフィール 会社員として働くかたわら、休日に絵と文章をつくっています。手のひらに収まる小さな発見。紙と鉛筆、デジタルと工芸。',
-        textEn:'Oshitemairu profile office employee illustrations writing craft digital' },
-      { section:'お問い合わせ', sectionEn:'Contact', anchor:'index.html#contact', external:true,
-        textJa:'お問い合わせ お仕事のご相談 展示のご案内 メールを送る',
-        textEn:'Contact work inquiries exhibitions send an email' },
-      { section:'FAQ', sectionEn:'FAQ', anchor:'#faq',
-        textJa:'ご依頼について よくある質問 ご依頼の流れ 金額の目安 5000円 20000円 納期 2〜4週間 ヒアリング ラフ提出 修正 納品',
-        textEn:'FAQ commission process price range delivery weeks rough sketch revisions' }
-    ];
+    // 日本語で検索しても、サイト内の英語表記(カテゴリ名やページ名)に
+    // ちゃんとヒットするようにするための、簡単な対訳辞書。
+    // 「キー」が英語表記、値の配列がその日本語の言い換え。
+    const SEARCH_SYNONYMS = {
+      'illustration': ['イラスト', 'イラストレーション', '絵'],
+      'music': ['音楽', '楽曲', '曲'],
+      'photography': ['写真', 'フォト', 'フォトグラフィー'],
+      'text': ['文章', 'テキスト'],
+      'novel': ['小説', '物語'],
+      'movie': ['映像', '動画', 'ムービー', '映画'],
+      'profile': ['プロフィール', '経歴'],
+      'contact': ['連絡先', 'お問い合わせ', 'コンタクト'],
+      'faq': ['よくある質問'],
+      'fan art': ['ファンアート'],
+      'guidelines': ['ガイドライン', '利用規約'],
+      'bookmarks': ['しおり', 'ブックマーク'],
+      'qr code': ['二次元コード', 'キューアール'],
+      'home': ['ホーム', 'トップ'],
+      'works': ['作品']
+    };
+    function jaSynonymsFor(enWord){
+      const list = SEARCH_SYNONYMS[String(enWord || '').toLowerCase()];
+      return list ? list.join(' ') : '';
+    }
+
+    function buildSiteIndex(){
+      const index = [
+        { section:'Home', sectionEn:'Home', anchor:'index.html#top', external:true,
+          textJa:'手を動かし、静けさを、かたちに。季節がひとつ過ぎるあいだに、ひとつ何かをつくる。急がずに、けれど手を止めずに。 ホーム トップ',
+          textEn:'Making things by hand, giving shape to quiet. One thing made, each time a season passes. Unhurried, yet never still. Home' },
+        { section:'プロフィール', sectionEn:'Profile', anchor:'index.html#profile', external:true,
+          textJa:'鴛照昧琉 おしてまいる 会社員として働くかたわら、休日に絵と文章をつくっています。大きなものより、手のひらに収まる小さな発見を集めることが好きです。紙と鉛筆から始まり、いまはデジタルと工芸のあいだを行き来しながら制作しています。私家版の作品集です。 プロフィール 経歴',
+          textEn:'Oshitemairu. Works as an office employee, makes illustrations and writing on days off. Drawn to small discoveries. Started with paper and pencil, now moves between digital work and craft. Profile' },
+        { section:'作品', sectionEn:'Works', anchor:'index.html#works', external:true,
+          textJa:'作品 イラスト 音楽 楽曲 小説 一覧',
+          textEn:'Works Illustration Music gallery' },
+        { section:'お問い合わせ', sectionEn:'Contact', anchor:'index.html#contact', external:true,
+          textJa:'お問い合わせ お仕事のご相談 展示のご案内 メールを送る oshitemail55@gmail.com 連絡先',
+          textEn:'Contact work inquiries exhibitions send an email' },
+
+        { section:'ファンアート', sectionEn:'Fan Art', anchor:'#fanart', external:false,
+          textJa:'ファンアート みなさんが描いてくださった作品を紹介するページ 投稿',
+          textEn:'Fan Art submissions from visitors' },
+        { section:'FAQ', sectionEn:'FAQ', anchor:'faq.html#faq', external:true,
+          textJa:'FAQ よくある質問 ガイドライン 著作権 利用規約 二次創作について ご依頼について ご依頼の流れ 金額の目安 5000円 20000円 納期 2〜4週間 ヒアリング ラフ提出 修正 納品',
+          textEn:'FAQ guidelines copyright terms of use commission process price range 2 to 4 weeks rough sketch revisions delivery' },
+        { section:'Music', sectionEn:'Music', anchor:'music.html#music', external:true,
+          textJa:'音楽 楽曲 作曲した曲を紹介するページ',
+          textEn:'Music original tracks I have composed' },
+        { section:'Novel', sectionEn:'Novel', anchor:'novel.html#novel', external:true,
+          textJa:'小説 掌編 書いた物語を紹介するページ',
+          textEn:'Novel short stories and pieces of writing' },
+        { section:'Movie', sectionEn:'Movie', anchor:'movie.html#movie', external:true,
+          textJa:'映像 動画 制作した映像作品を紹介するページ',
+          textEn:'Movie video works I have created' },
+      ];
+      return index;
+    }
+    const siteIndex = buildSiteIndex();
 
     function snippetFor(entry){
       const text = isEnglish() ? entry.textEn : entry.textJa;
       return text.length > 34 ? text.slice(0, 34) + '…' : text;
     }
 
+    // クエリが辞書に載っている語(英語・日本語どちらでも)と一致・部分一致したら、
+    // その言い換え(対訳)もすべて検索候補に加える。
+    function expandQuery(q){
+      const variants = new Set([q]);
+      Object.keys(SEARCH_SYNONYMS).forEach(enWord=>{
+        const jaWords = SEARCH_SYNONYMS[enWord];
+        const allWords = [enWord, ...jaWords];
+        const matched = allWords.some(w => w.toLowerCase() === q || q.includes(w.toLowerCase()) || w.toLowerCase().includes(q));
+        if(matched){
+          allWords.forEach(w => variants.add(w.toLowerCase()));
+        }
+      });
+      return Array.from(variants);
+    }
+
+    // 「いかにもコードのような文字列」での検索は、結果を出さずに弾く
+    // (表示側はescapeHtmlで無害化済みだが、そもそも検索自体させない追加の防御層)。
     function renderResults(query){
+      query = query.slice(0, 20); // 念のため、こちらでも文字数を20字までに制限する
       siteSearchResults.innerHTML = '';
-      if(query === ''){
+      if(query === '' || (typeof window.containsCodeLikeContent === 'function' && window.containsCodeLikeContent(query))){
         siteSearchEmpty.hidden = true;
         return;
       }
       const q = query.toLowerCase();
+      const queryVariants = expandQuery(q);
       const scored = siteIndex.map(entry=>{
         const haystack = (entry.textJa + ' ' + entry.textEn).toLowerCase();
-        return { entry, score: fuzzyScore(q, haystack) };
+        const bestScore = Math.max(...queryVariants.map(v => fuzzyScore(v, haystack)));
+        return { entry, score: bestScore };
       }).filter(x => x.score > 0);
       scored.sort((a,b)=> b.score - a.score);
       const matches = scored.slice(0, 8).map(x => x.entry);
@@ -2078,7 +2424,7 @@
         const li = document.createElement('li');
         const a = document.createElement('a');
         a.href = entry.anchor;
-        a.innerHTML = `<span class="site-search-result-section">${isEnglish() ? entry.sectionEn : entry.section}</span><span class="site-search-result-snippet">${snippetFor(entry)}</span>`;
+        a.innerHTML = `<span class="site-search-result-section">${escapeHtml(isEnglish() ? entry.sectionEn : entry.section)}</span><span class="site-search-result-snippet">${escapeHtml(snippetFor(entry))}</span>`;
         a.addEventListener('click', (e)=>{
           e.preventDefault();
           searchPanelCtl.close();
@@ -2147,7 +2493,7 @@
         item.className = 'rewatch-item';
         const fallbackColor = entry.color || 'linear-gradient(150deg,#726B5E,#4A453B)';
         const media = entry.img
-          ? `<img src="${entry.img}" alt="${title}" style="width:100%;height:100%;object-fit:cover;" onerror="this.outerHTML='<div style=&quot;position:absolute;inset:0;background:${fallbackColor}&quot;></div>'">`
+          ? `<img src="${escapeHtml(entry.img)}" alt="${escapeHtml(title)}" style="width:100%;height:100%;object-fit:cover;" loading="lazy" decoding="async" onerror="this.outerHTML='<div style=&quot;position:absolute;inset:0;background:${window.escapeJsString(fallbackColor)}&quot;></div>'">`
           : `<div style="position:absolute;inset:0;background:${fallbackColor}"></div>`;
         item.innerHTML = `<div class="rewatch-thumb">${media}</div><p>${escapeHtml(title)}</p>`;
         item.addEventListener('click', ()=>{
@@ -2219,18 +2565,101 @@
     });
 
     const rewatchCtl = bindSheetModal(rewatchBackdrop, rewatchSheet, 400, renderRewatchList);
-    navRewatch.addEventListener('click', (e)=>{ e.preventDefault(); rewatchCtl.open(); });
+    navRewatch.addEventListener('click', (e)=>{
+      e.preventDefault();
+      rewatchSheet.style.maxHeight = '';
+      rewatchSheet.style.height = '';
+      rewatchCtl.open();
+    });
     document.getElementById('rewatchClose').addEventListener('click', rewatchCtl.close);
+
+    // ハンドル部分(上部のつまみ)を指・マウスでドラッグして、シートの高さを
+    // 上下に自由に調整できるようにする。上に引っ張れば大きく、下に引っ張れば
+    // 小さくなり、さらに大きく下へ引っ張ると、そのまま閉じる。
+    (function(){
+      const handle = rewatchSheet.querySelector('.bottom-sheet-handle');
+      const head = rewatchSheet.querySelector('.bottom-sheet-head');
+      if(!handle) return;
+      const MIN_HEIGHT_VH = 40;
+      const MAX_HEIGHT_VH = 92;
+      const DEFAULT_HEIGHT_VH = 70;
+      const CLOSE_THRESHOLD_VH = 22; // これ以上下に引っ張ったら閉じる
+      let startY = 0;
+      let currentY = 0;
+      let baseHeightVh = DEFAULT_HEIGHT_VH;
+      let dragging = false;
+      function currentHeightVh(){
+        const rect = rewatchSheet.getBoundingClientRect();
+        return (rect.height / window.innerHeight) * 100;
+      }
+      function onStart(clientY){
+        dragging = true;
+        startY = clientY;
+        currentY = clientY;
+        baseHeightVh = currentHeightVh();
+        rewatchSheet.style.transition = 'none';
+      }
+      function onMove(clientY){
+        if(!dragging) return;
+        currentY = clientY;
+        const deltaVh = ((startY - currentY) / window.innerHeight) * 100; // 上へ引っ張ると正の値
+        const newHeightVh = Math.max(MIN_HEIGHT_VH, Math.min(MAX_HEIGHT_VH, baseHeightVh + deltaVh));
+        rewatchSheet.style.maxHeight = newHeightVh + 'vh';
+        rewatchSheet.style.height = newHeightVh + 'vh';
+      }
+      function onEnd(){
+        if(!dragging) return;
+        dragging = false;
+        rewatchSheet.style.transition = '';
+        const deltaVh = ((startY - currentY) / window.innerHeight) * 100;
+        if(deltaVh < -CLOSE_THRESHOLD_VH){
+          rewatchCtl.close();
+        }
+      }
+      handle.addEventListener('touchstart', (e)=> onStart(e.touches[0].clientY), { passive:true });
+      handle.addEventListener('touchmove', (e)=> onMove(e.touches[0].clientY), { passive:true });
+      handle.addEventListener('touchend', onEnd);
+      handle.addEventListener('mousedown', (e)=>{ onStart(e.clientY); e.preventDefault(); });
+      // 上辺(タイトル部分)からも、同じようにドラッグで動かせるようにする。
+      // ただし、閉じるボタンの上から始めた場合は、ドラッグとして扱わない
+      // (ボタンのクリックが、正しく機能しなくなるのを防ぐため)。
+      if(head){
+        head.addEventListener('touchstart', (e)=>{
+          if(e.target.closest('#rewatchClose')) return;
+          onStart(e.touches[0].clientY);
+        }, { passive:true });
+        head.addEventListener('touchmove', (e)=> onMove(e.touches[0].clientY), { passive:true });
+        head.addEventListener('touchend', onEnd);
+        head.addEventListener('mousedown', (e)=>{
+          if(e.target.closest('#rewatchClose')) return;
+          onStart(e.clientY);
+          e.preventDefault();
+        });
+      }
+      document.addEventListener('mousemove', (e)=>{ if(dragging) onMove(e.clientY); });
+      document.addEventListener('mouseup', onEnd);
+    })();
   }catch(err){ console.error('rewatch init failed:', err); }
 
   try{
     const qrBackdrop = document.getElementById('qrBackdrop');
     const qrModal = document.getElementById('qrModal');
     const navQr = document.getElementById('navQr');
+    // 前景を墨色、背景を生成り色にすることで、和の色味を保ちつつ、
+    // 通常の白黒QRコードと同じくらいの高いコントラストを確保している(読み取りやすさ優先)。
+    // 色そのものはテーマ(ライト/ダーク)に関わらず、常にこの2色で固定。
+    function qrImageUrl(url){
+      return 'https://api.qrserver.com/v1/create-qr-code/?size=192x192'
+        + '&color=221F1B&bgcolor=F6F1E6'
+        + '&data=' + encodeURIComponent(url);
+    }
+    const qrUrl = location.origin + location.pathname;
+    // モーダルを開く前に、あらかじめ画像を読み込んでおく(プリロード)。
+    const qrPreload = new Image();
+    qrPreload.src = qrImageUrl(qrUrl);
     function fillQrContent(){
-      const url = location.origin + location.pathname;
-      document.getElementById('qrImage').src = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(url);
-      document.getElementById('qrUrlText').textContent = url;
+      document.getElementById('qrImage').src = qrImageUrl(qrUrl);
+      document.getElementById('qrUrlText').textContent = qrUrl;
     }
     const qrCtl = bindSheetModal(qrBackdrop, qrModal, 300, fillQrContent);
     navQr.addEventListener('click', (e)=>{ e.preventDefault(); qrCtl.open(); });
@@ -2238,29 +2667,73 @@
   }catch(err){ console.error('qr init failed:', err); }
 
   try{
+    // Musicページで公開している曲と同じ内容。曲を増やす時は、Musicページの
+    // 曲一覧に追加するのに合わせて、ここにも同じ形で1行追加してください。
+    const BGM_TRACKS = [
+      { title:'灯りをともす', src:'' },
+      { title:'庭の記録', src:'' }
+    ];
+
     const bgmToggle = document.getElementById('bgmToggle');
+    const bgmPrevBtn = document.getElementById('bgmPrevBtn');
+    const bgmNextBtn = document.getElementById('bgmNextBtn');
     const bgmAudio = document.getElementById('bgmAudio');
+    const bgmTrackName = document.getElementById('bgmTrackName');
+    const playIcon = bgmToggle.querySelector('.bgm-icon-play');
+    const pauseIcon = bgmToggle.querySelector('.bgm-icon-pause');
     let bgmClickCount = 0;
+    let bgmIndex = 0;
+    let bgmLoaded = false;
+
+    function setPlayingUi(playing){
+      bgmToggle.setAttribute('aria-pressed', String(playing));
+      bgmToggle.setAttribute('aria-label', playing ? 'BGMを停止' : 'BGMを再生');
+      playIcon.hidden = playing;
+      pauseIcon.hidden = !playing;
+    }
+
+    function loadBgmTrack(index, keepPlaying){
+      const total = BGM_TRACKS.length;
+      bgmIndex = ((index % total) + total) % total;
+      const track = BGM_TRACKS[bgmIndex];
+      bgmAudio.src = track.src || '';
+      bgmTrackName.textContent = track.title || '';
+      bgmLoaded = true;
+      if(keepPlaying && track.src){
+        bgmAudio.play().catch(()=>{});
+      }
+    }
+
     bgmToggle.addEventListener('click', ()=>{
       bgmClickCount++;
       if(bgmClickCount >= 10 && typeof AchievementModule !== 'undefined' && AchievementModule.isLoggedIn()){
         AchievementModule.unlock('bgm-mania');
       }
-      const playing = bgmToggle.getAttribute('aria-pressed') === 'true';
-      if(playing){
-        bgmAudio.pause();
-        bgmToggle.setAttribute('aria-pressed', 'false');
-        bgmToggle.setAttribute('aria-label', 'BGMを再生');
-        bgmToggle.querySelector('.bgm-icon-play').hidden = false;
-        bgmToggle.querySelector('.bgm-icon-pause').hidden = true;
+      if(!bgmLoaded) loadBgmTrack(0, false);
+      if(bgmAudio.paused){
+        bgmAudio.play().catch(()=>{
+          console.warn('BGM再生に失敗しました。音声ファイルが未設定の可能性があります。');
+        });
+        setPlayingUi(true);
       }else{
-        bgmAudio.play().catch(()=>{});
-        bgmToggle.setAttribute('aria-pressed', 'true');
-        bgmToggle.setAttribute('aria-label', 'BGMを停止');
-        bgmToggle.querySelector('.bgm-icon-play').hidden = true;
-        bgmToggle.querySelector('.bgm-icon-pause').hidden = false;
+        bgmAudio.pause();
+        setPlayingUi(false);
       }
     });
+
+    bgmPrevBtn.addEventListener('click', ()=>{
+      if(!bgmLoaded) loadBgmTrack(0, false);
+      loadBgmTrack(bgmIndex - 1, !bgmAudio.paused);
+    });
+    bgmNextBtn.addEventListener('click', ()=>{
+      if(!bgmLoaded) loadBgmTrack(0, false);
+      loadBgmTrack(bgmIndex + 1, !bgmAudio.paused);
+    });
+    bgmAudio.addEventListener('ended', ()=>{
+      loadBgmTrack(bgmIndex + 1, true);
+    });
+    bgmAudio.addEventListener('play', ()=> setPlayingUi(true));
+    bgmAudio.addEventListener('pause', ()=> setPlayingUi(false));
   }catch(err){ console.error('bgm init failed:', err); }
 
   window.DISQUS_SHORTNAME = 'oshitemairu';
@@ -2457,6 +2930,42 @@
     const lbImg = document.getElementById('fanartLbImg');
     const lbName = document.getElementById('fanartLbName');
 
+    // ピックアップ用のサムネ設定(16:9の焦点位置)。画像・YouTubeのみ対応、
+    // 直接の動画ファイルは対応対象外(クロップ元になる静止画がないため)。
+    const pickupSetting = document.getElementById('fanartPickupSetting');
+    const pickupCropFrame = document.getElementById('fanartPickupCropFrame');
+    const pickupCropImg = document.getElementById('fanartPickupCropImg');
+    const pickupCropMarker = document.getElementById('fanartPickupCropMarker');
+    const pickupFocusXInput = document.getElementById('fanartPickupFocusX');
+    const pickupFocusYInput = document.getElementById('fanartPickupFocusY');
+    function setPickupFocus(xPct, yPct){
+      pickupFocusXInput.value = Math.round(xPct);
+      pickupFocusYInput.value = Math.round(yPct);
+      pickupCropImg.style.objectPosition = `${xPct}% ${yPct}%`;
+      pickupCropMarker.style.left = `${xPct}%`;
+      pickupCropMarker.style.top = `${yPct}%`;
+      pickupCropMarker.hidden = false;
+    }
+    pickupCropFrame.addEventListener('click', (e)=>{
+      const rect = pickupCropFrame.getBoundingClientRect();
+      const xPct = ((e.clientX - rect.left) / rect.width) * 100;
+      const yPct = ((e.clientY - rect.top) / rect.height) * 100;
+      setPickupFocus(Math.max(0, Math.min(100, xPct)), Math.max(0, Math.min(100, yPct)));
+    });
+    function resetPickupSetting(){
+      pickupSetting.hidden = true;
+      pickupSetting.open = false;
+      pickupFocusXInput.value = '50';
+      pickupFocusYInput.value = '50';
+      pickupCropImg.style.objectPosition = '50% 50%';
+      pickupCropMarker.hidden = true;
+      document.getElementById('fanartPickupExcluded').checked = false;
+    }
+    function showPickupSettingWithImage(imgUrl){
+      pickupCropImg.src = imgUrl;
+      pickupSetting.hidden = false;
+    }
+
     // URL入力欄の下に、その場でプレビューを表示する(画像・YouTube・直接の動画ファイルに対応)。
     const previewBox = document.getElementById('fanartPreview');
     const previewImg = document.getElementById('fanartPreviewImg');
@@ -2465,9 +2974,10 @@
     urlInput.addEventListener('input', ()=>{
       clearTimeout(previewDebounce);
       const url = urlInput.value.trim();
-      if(!/^https?:\/\/.+/i.test(url)){
+      if(!isAllowedMediaUrl(url)){
         previewBox.hidden = true;
-        previewError.hidden = true;
+        previewError.hidden = (url === '');
+        resetPickupSetting();
         return;
       }
       previewDebounce = setTimeout(()=>{
@@ -2477,11 +2987,13 @@
           previewImg.onload = ()=>{ previewBox.hidden = false; };
           previewImg.onerror = ()=>{ previewBox.hidden = true; previewError.hidden = false; };
           previewImg.src = `https://img.youtube.com/vi/${ytId}/hqdefault.jpg`;
+          showPickupSettingWithImage(`https://img.youtube.com/vi/${ytId}/hqdefault.jpg`);
           return;
         }
         if(/\.(mp4|webm|mov)(\?.*)?$/i.test(url)){
           previewBox.hidden = false;
-          previewBox.innerHTML = `<video src="${url}" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;" onerror="this.closest('.fanart-preview').hidden=true; document.getElementById('fanartPreviewError').hidden=false;"></video>`;
+          previewBox.innerHTML = `<video src="${escapeHtml(url)}" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;" onerror="this.closest('.fanart-preview').hidden=true; document.getElementById('fanartPreviewError').hidden=false;"></video>`;
+          resetPickupSetting(); // 動画ファイルは、ピックアップのサムネ設定対象外
           return;
         }
         previewBox.innerHTML = '<img id="fanartPreviewImg" alt="プレビュー">';
@@ -2489,6 +3001,7 @@
         img.onload = ()=>{ previewBox.hidden = false; };
         img.onerror = ()=>{ previewBox.hidden = true; previewError.hidden = false; };
         img.src = url;
+        showPickupSettingWithImage(url);
       }, 300);
     });
     const lbMeta = document.getElementById('fanartLbMeta');
@@ -2542,10 +3055,11 @@
 
     function openLightbox(item){
       currentDocId = item.id;
-      currentLikes = item.likes || 0;
+      currentLikes = normalizeLikes(item.likes);
       currentAuthorUid = item.authorUid || null;
       lbImg.innerHTML = mediaHtml(item.imageUrl, escapeHtml(item.name || 'ファンアート'));
       lbName.textContent = item.name || '名無しさん';
+      document.getElementById('fanartLbOwnerBadge').hidden = !(item.authorUid && item.authorUid === OWNER_UID);
       lbMeta.textContent = formatDate(item.createdAt);
       likeCountEl.textContent = currentLikes;
       likeBtn.classList.toggle('liked', likedIds().includes(item.id));
@@ -2557,6 +3071,7 @@
       const myUid = (siteFb && siteFb.ready && siteFb.auth && siteFb.auth.currentUser) ? siteFb.auth.currentUser.uid : null;
       deleteBtn.hidden = !(currentAuthorUid && myUid && myUid === currentAuthorUid);
       renderCommentsFor(item.id, item.name || 'ファンアート');
+      renderRelatedFanart(item);
       if(typeof recordRewatch === 'function'){
         const yt = youtubeEmbedUrl(item.imageUrl);
         const ytIdMatch = item.imageUrl.match(/(?:youtube\.com\/watch\?v=|youtube\.com\/shorts\/|youtu\.be\/)([\w-]{11})/);
@@ -2572,6 +3087,37 @@
       document.body.style.overflow = '';
       currentDocId = null;
     }
+    // 今見ている投稿の下に、関連する投稿をさりげなく表示する(pixivのイメージ)。
+    // 今、画面に読み込まれているカードの中から、同じカテゴリを優先して選ぶ。
+    function renderRelatedFanart(currentItem){
+      const relatedSection = document.getElementById('fanartLbRelated');
+      const relatedGrid = document.getElementById('fanartLbRelatedGrid');
+      if(!relatedSection || !relatedGrid) return;
+      const allCards = Array.from(grid.querySelectorAll('.fanart-card'))
+        .map(c => c._itemData)
+        .filter(d => d && d.id !== currentItem.id);
+      const sameCategory = allCards.filter(d => d.category === currentItem.category);
+      let candidates = sameCategory.length > 0 ? sameCategory : allCards;
+      if(candidates.length === 0){
+        relatedSection.hidden = true;
+        return;
+      }
+      const shuffled = candidates.slice().sort(()=> Math.random() - 0.5);
+      const picks = shuffled.slice(0, 3);
+      relatedGrid.innerHTML = picks.map(d=>{
+        return `<div class="lb-related-item" data-id="${escapeHtml(d.id)}">
+          ${thumbHtml(d.imageUrl, escapeHtml(d.name || '名無しさん'))}
+          <span class="lb-related-item-title">${escapeHtml(d.name || '名無しさん')}</span>
+        </div>`;
+      }).join('');
+      relatedGrid.querySelectorAll('.lb-related-item').forEach(el=>{
+        el.addEventListener('click', ()=>{
+          const found = picks.find(d => d.id === el.dataset.id);
+          if(found) openLightbox(found);
+        });
+      });
+      relatedSection.hidden = false;
+    }
     lbCloseBtn.addEventListener('click', closeLightbox);
     lightbox.addEventListener('click', (e)=>{ if(e.target === lightbox) closeLightbox(); });
     document.addEventListener('keydown', (e)=>{ if(e.key === 'Escape' && lightbox.classList.contains('open')) closeLightbox(); });
@@ -2579,6 +3125,11 @@
     likeBtn.addEventListener('click', async ()=>{
       if(!currentDocId || !fb || !fb.ready) return;
       if(likedIds().includes(currentDocId)) return; // 1人1回まで
+      if(typeof window.isCurrentUserBanned === 'function' && await window.isCurrentUserBanned()) return; // BAN済みなら、そっと何も起きないようにする
+      const siteFbCheck = window.__siteFirebase;
+      const loggedIn = !!(siteFbCheck && siteFbCheck.auth && siteFbCheck.auth.currentUser);
+      const okToProceed = await window.checkSiteWriteRateLimit('writeRateLimit', loggedIn);
+      if(!okToProceed) return; // 混雑中は、そっと何も起きないようにする(いいね程度でアラートは出さない)
       likeBtn.classList.add('liked');
       currentLikes += 1;
       likeCountEl.textContent = currentLikes;
@@ -2624,6 +3175,67 @@
       }
     });
 
+    // 投稿・表示のどちらでも使う、URLの安全確認。
+    // ①投稿を受け付ける前(入り口)と、②実際に画面に表示する直前(出口)、
+    // 両方でこのチェックを必ず通す。こうすることで、万が一何らかの方法で
+    // このチェックをすり抜けてデータベースに書き込まれてしまったものがあっても、
+    // 表示する側で必ずもう一度弾かれるので、画面には一切出てこない(隔離される)。
+    const ALLOWED_MEDIA_HOSTS = [
+      'twitter.com', 'x.com', 'pbs.twimg.com', 'video.twimg.com', // X (Twitter)
+      'youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be', 'img.youtube.com', // YouTube
+      'pixiv.net', 'www.pixiv.net', 'i.pximg.net' // pixiv
+    ];
+    // スクリプトを埋め込める・実行させられる可能性がある拡張子は、はっきり拒否する。
+    const BLOCKED_URL_EXTENSIONS = /\.(svg|html?|xhtml|js|mjs|php|exe|scr|bat|cmd|jar|apk|dmg|msi|sh|ps1)(\?.*)?$/i;
+    // X・YouTube・pixivの実際のURLは、長くてもだいたい80文字程度(pixivの画像URLが最長)。
+    // 十分に余裕を持たせつつ、悪用目的の異常に長い文字列(難読化などに使われがち)は
+    // 弾けるよう、200文字を上限にする。
+    const MAX_MEDIA_URL_LENGTH = 200;
+    function isAllowedMediaUrl(rawUrl){
+      if(typeof rawUrl !== 'string' || rawUrl.length > MAX_MEDIA_URL_LENGTH) return false;
+      let u;
+      try{ u = new URL(rawUrl); }catch(e){ return false; }
+      if(u.protocol !== 'https:') return false; // javascript: や data: なども、ここで確実に弾かれる
+      const host = u.hostname.toLowerCase();
+      const hostOk = ALLOWED_MEDIA_HOSTS.some(allowed => host === allowed || host.endsWith('.' + allowed));
+      if(!hostOk) return false;
+      if(BLOCKED_URL_EXTENSIONS.test(u.pathname)) return false;
+      return true;
+    }
+    // 「いかにもコードのような文字列」を検知するための、簡易的なパターン一覧。
+    // お名前・ハンドルネーム欄など、自由記述のテキスト入力に対して使う
+    // (表示側は別途escapeHtmlで無害化済みだが、入り口でも弾く追加の防御層)。
+    // 「いかにもコードのような文字列」を検知するための、簡易的なパターン一覧。
+    // お名前・ハンドルネーム欄など、自由記述のテキスト入力に対して使う
+    // (表示側は別途escapeHtmlで無害化済みだが、入り口でも弾く追加の防御層)。
+    // イベントハンドラ(on〜=)は種類を書き出すとキリがないため、on英字+=という
+    // 形をまとめて拾う形にしている。全角文字や空白・タブを使った偽装
+    // (例:「ｏｎｅｒｒｏｒ」「java  script:」)にも対応できるよう、判定前に
+    // 全角→半角への正規化と、空白・不可視文字を除いた版でも重ねて確認する。
+    // 繰り返し部分(+ や *)に上限を付け、「どこまでも一致を試して、延々と後戻りする」
+    // ことがないようにしている(ReDoS対策)。実在のイベントハンドラ名は
+    // 数文字〜十数文字程度なので、20文字あれば十分。
+    const CODE_LIKE_PATTERN = /<\s{0,10}(script|iframe|object|embed|svg|img|style|link|meta|form|body|a)\b|javascript\s{0,10}:|data\s{0,10}:\s{0,10}text\/html|on[a-zA-Z]{1,20}\s{0,10}=|document\s{0,10}\.\s{0,10}\w|window\s{0,10}\.\s{0,10}\w|eval\s{0,10}\(|<%|%>|\$\{/i;
+    // 正規表現をかける前に、そもそも異常に長い文字列は、それだけで疑わしいものとして
+    // 即座に拒否する。これにより、上の上限設定と合わせて二重に、処理が重くなる
+    // ことを防いでいる(投稿フォーム側は、そもそも数十〜数百文字までしか
+    // 入力できないので、これを大きく超える文字列は、正規の利用では発生しない)。
+    const CODE_LIKE_MAX_LENGTH = 2000;
+    // ゼロ幅文字・双方向制御文字など、画面には見えないのに文字列としては
+    // 存在する、いわゆる「見えない文字」を取り除く。これらを名前に混ぜることで、
+    // 「見た目はそっくりだが、実は別の投稿者」というなりすましに使われることがある。
+    window.stripInvisibleChars = function(text){
+      if(typeof text !== 'string') return text;
+      return text.replace(/[\u200B-\u200D\uFEFF\u202A-\u202E\u2066-\u2069\u0000-\u001F\u007F]/g, '');
+    };
+    window.containsCodeLikeContent = function(text){
+      if(typeof text !== 'string') return false;
+      if(text.length > CODE_LIKE_MAX_LENGTH) return true;
+      const normalized = text.normalize('NFKC');
+      const stripped = normalized.replace(/[\s\u200B-\u200D\uFEFF]/g, '');
+      return CODE_LIKE_PATTERN.test(normalized) || CODE_LIKE_PATTERN.test(stripped);
+    };
+
     // 貼り付けられたURLが「YouTube」「直接の動画ファイル」「画像」のどれかを判定し、
     // それぞれに適した表示用HTMLを組み立てる。
     // (X/Twitterの動画は、公式の埋め込みスクリプトが重いため、現時点では非対応。)
@@ -2634,17 +3246,30 @@
       return id ? `https://www.youtube.com/embed/${id}` : null;
     }
     function mediaHtml(url, altText){
+      if(!isAllowedMediaUrl(url)){
+        return `<div class="lb-img-broken-msg">この作品は表示できません<br>(対応していないURLです)</div>`;
+      }
       const yt = youtubeEmbedUrl(url);
       if(yt){
         return `<iframe src="${yt}" title="${altText}" style="width:100%;height:100%;border:0;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen loading="lazy"></iframe>`;
       }
       if(/\.(mp4|webm|mov)(\?.*)?$/i.test(url)){
-        return `<video src="${url}" controls playsinline style="width:100%;height:100%;object-fit:cover;"></video>`;
+        return `<video src="${escapeHtml(url)}" controls playsinline style="width:100%;height:100%;object-fit:cover;"></video>`;
       }
-      return `<img src="${url}" alt="${altText}" loading="lazy" onerror="this.outerHTML='<div class=&quot;lb-img-broken-msg&quot;>画像を読み込めませんでした<br>(リンク元が削除された可能性があります)</div>'">`;
+      return `<img src="${escapeHtml(url)}" alt="${altText}" loading="lazy" onerror="this.outerHTML='<div class=&quot;lb-img-broken-msg&quot;>画像を読み込めませんでした<br>(リンク元が削除された可能性があります)</div>'">`;
     }
 
+    // likesフィールドに、負の数・NaN・Infinity・文字列などの異常値が
+    // 紛れ込んでいても、必ず0以上の整数として扱う。
+    function normalizeLikes(v){
+      const n = parseInt(v, 10);
+      return (Number.isFinite(n) && n > 0) ? n : 0;
+    }
     function thumbHtml(url, altText){
+      if(!isAllowedMediaUrl(url)){
+        // 表示できないものは、カードごと直接隠す(onerrorに頼らず確実に)。
+        return `<div class="fanart-invalid-marker" data-invalid="1"></div>`;
+      }
       const yt = youtubeEmbedUrl(url);
       if(yt){
         const idMatch = url.match(/(?:youtube\.com\/watch\?v=|youtube\.com\/shorts\/|youtu\.be\/)([\w-]{11})/);
@@ -2652,15 +3277,28 @@
         return `<img src="${thumbUrl}" alt="${altText}" loading="lazy" onerror="this.closest('.fanart-card')?.classList.add('fanart-broken')"><span class="fanart-play-badge">▶</span>`;
       }
       if(/\.(mp4|webm|mov)(\?.*)?$/i.test(url)){
-        return `<video src="${url}" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;"></video><span class="fanart-play-badge">▶</span>`;
+        return `<video src="${escapeHtml(url)}" muted playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;"></video><span class="fanart-play-badge">▶</span>`;
       }
-      return `<img src="${url}" alt="${altText}" loading="lazy" onerror="this.closest('.fanart-card')?.classList.add('fanart-broken')">`;
+      return `<img src="${escapeHtml(url)}" alt="${altText}" loading="lazy" onerror="this.closest('.fanart-card')?.classList.add('fanart-broken')">`;
     }
 
     function renderCard(item){
+      if(!isAllowedMediaUrl(item.imageUrl)){
+        // 対応していないURL(何らかの理由でチェックをすり抜けてデータベースに
+        // 残ってしまったもの含む)は、カード自体を作らず、画面には一切出さない。
+        console.warn('表示できない投稿をスキップしました:', item.id);
+        return;
+      }
       const card = document.createElement('div');
       card.className = 'fanart-card reveal in';
       card.dataset.id = item.id;
+      card._itemData = item; // 関連投稿を探す時に、他のカードのデータを参照できるようにしておく
+      card.dataset.likes = normalizeLikes(item.likes);
+      card.dataset.name = item.name || '';
+      const createdAtDate = item.createdAt ? (item.createdAt.toDate ? item.createdAt.toDate() : new Date(item.createdAt)) : new Date(0);
+      card.dataset.createdAt = createdAtDate.getTime();
+      const isVideoMedia = !!youtubeEmbedUrl(item.imageUrl) || /\.(mp4|webm|mov)(\?.*)?$/i.test(item.imageUrl);
+      card.dataset.media = isVideoMedia ? 'video' : 'image';
       const favId = 'fanart-' + item.id;
       card.innerHTML = `
         <div class="fanart-thumb">
@@ -2670,11 +3308,11 @@
           </span>
         </div>
         <div class="fanart-caption">
-          <span class="fanart-caption-name">${escapeHtml(item.name || '名無しさん')}</span>
+          <span class="fanart-caption-name">${escapeHtml(item.name || '名無しさん')}${item.authorUid && item.authorUid === OWNER_UID ? '<span class="fanart-owner-badge" title="運営者本人の投稿です">運営者</span>' : ''}</span>
           <span class="fanart-caption-meta">
             <span class="fanart-mini-like">
               <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7.5-4.5-9.5-9C.9 8.1 2.4 5 5.6 4.4c2-.4 3.9.5 5 2.1 1.1-1.6 3-2.5 5-2.1C18.9 5 20.4 8.1 18.8 12c-2 4.5-9.5 9-9.5 9z"/></svg>
-              <span>${item.likes || 0}</span>
+              <span>${normalizeLikes(item.likes)}</span>
             </span>
           </span>
         </div>`;
@@ -2695,22 +3333,72 @@
       grid.appendChild(card);
     }
 
+    // 短時間のキャッシュ。同じ人が、短い間隔で何度もページを開き直しても、
+    // その都度データベースへ読みに行かず、直近の結果を使い回すことで、
+    // 読み込み回数(1日の上限)を無駄に消費しないようにする。
+    // ※ これは「うっかり連続リロード」への対策であり、意図的にプログラムから
+    //   直接データベースを叩くような攻撃までは防げない(その対策には、
+    //   Firebase App Checkという、別の仕組みが必要。詳しくは別紙を参照)。
+    const GALLERY_CACHE_MS = 15000; // 15秒(短すぎると読み込み削減の効果が薄れ、長すぎると削除した投稿がしばらく見え続けてしまうため、間を取っている)
+    function getGalleryCache(tab){
+      try{
+        const raw = sessionStorage.getItem('fanart-cache-' + tab);
+        if(!raw) return null;
+        const cached = JSON.parse(raw);
+        if(Date.now() - cached.savedAt > GALLERY_CACHE_MS) return null;
+        return cached.items;
+      }catch(e){ return null; }
+    }
+    function setGalleryCache(tab, items){
+      try{ sessionStorage.setItem('fanart-cache-' + tab, JSON.stringify({ savedAt: Date.now(), items })); }catch(e){}
+    }
     async function loadGallery(){
       if(!fb || !fb.ready){ loadingMsg.textContent = '読み込みに失敗しました。時間をおいて再度お試しください。'; return; }
       grid.innerHTML = '';
       emptyMsg.hidden = true;
       loadingMsg.hidden = false;
+
+      const cached = getGalleryCache(currentTab);
+      if(cached){
+        loadingMsg.hidden = true;
+        if(cached.length === 0){ emptyMsg.hidden = false; return; }
+        cached.forEach(item => renderCard(item));
+        if(typeof window.refreshFanartFilterSort === 'function') window.refreshFanartFilterSort();
+        return;
+      }
       try{
-        const q = fb.query(
-          fb.collection(fb.db, 'fanart'),
-          fb.where('isR18', '==', currentTab === 'r18'),
-          fb.orderBy('createdAt', 'desc'),
-          fb.limit(60)
-        );
+        // R18タブは、投稿場所(Share room/ファンアート)を問わず、
+        // 「R18指定された投稿すべて」を1か所にまとめて表示する。
+        const q = currentTab === 'r18'
+          ? fb.query(
+              fb.collection(fb.db, 'fanart'),
+              fb.where('isR18', '==', true),
+              fb.orderBy('createdAt', 'desc'),
+              fb.limit(60)
+            )
+          : fb.query(
+              fb.collection(fb.db, 'fanart'),
+              fb.where('category', '==', currentTab),
+              fb.where('isR18', '==', false),
+              fb.orderBy('createdAt', 'desc'),
+              fb.limit(60)
+            );
         const snap = await fb.getDocs(q);
         loadingMsg.hidden = true;
-        if(snap.empty){ emptyMsg.hidden = false; return; }
-        snap.forEach(d => renderCard({ id:d.id, ...d.data() }));
+        const items = [];
+        snap.forEach(d => {
+          const data = d.data();
+          // createdAtは、キャッシュ保存(JSON化)を経ても壊れないよう、
+          // あらかじめ普通の数値(ミリ秒)に変換しておく。
+          const createdAtMs = data.createdAt
+            ? (data.createdAt.toDate ? data.createdAt.toDate().getTime() : new Date(data.createdAt).getTime())
+            : 0;
+          items.push({ id:d.id, ...data, createdAt: createdAtMs });
+        });
+        setGalleryCache(currentTab, items);
+        if(items.length === 0){ emptyMsg.hidden = false; return; }
+        items.forEach(item => renderCard(item));
+        if(typeof window.refreshFanartFilterSort === 'function') window.refreshFanartFilterSort();
       }catch(err){
         console.error('gallery load failed:', err);
         if(window.isQuotaError(err)){
@@ -2722,13 +3410,118 @@
       }
     }
 
-    // 通常 / R18 タブの切り替えと、R18側の年齢確認。
-    const tabNormal = document.getElementById('fanartTabNormal');
+    const fanartSortSelect = document.getElementById('fanartSort');
+    const fanartFilterSelect = document.getElementById('fanartFilter');
+    function applyFanartFilterSort(){
+      const mode = fanartSortSelect.value;
+      const filterValue = fanartFilterSelect.value;
+      const cards = Array.from(grid.querySelectorAll('.fanart-card'));
+      cards.forEach(c=>{
+        const visible = filterValue === 'all' || c.dataset.media === filterValue;
+        c.classList.toggle('fanart-filtered-out', !visible);
+      });
+      cards.sort((a, b)=>{
+        if(mode === 'new') return parseInt(b.dataset.createdAt, 10) - parseInt(a.dataset.createdAt, 10);
+        if(mode === 'old') return parseInt(a.dataset.createdAt, 10) - parseInt(b.dataset.createdAt, 10);
+        if(mode === 'popular') return (parseInt(b.dataset.likes, 10) || 0) - (parseInt(a.dataset.likes, 10) || 0);
+        if(mode === 'name') return (a.dataset.name || '').localeCompare(b.dataset.name || '', 'ja');
+        return 0;
+      });
+      cards.forEach(c => grid.appendChild(c));
+    }
+    // 並べ替え・絞り込みの設定を、次にページを開いた時も覚えておく。
+    const FANART_SORT_PREF_KEY = 'fanart-sort-pref';
+    const FANART_FILTER_PREF_KEY = 'fanart-filter-pref';
+    let fanartSortFilterRestored = false;
+    function saveFanartSortPref(){
+      try{ localStorage.setItem(FANART_SORT_PREF_KEY, fanartSortSelect.value); }catch(e){}
+    }
+    function saveFanartFilterPref(){
+      try{ localStorage.setItem(FANART_FILTER_PREF_KEY, fanartFilterSelect.value); }catch(e){}
+    }
+    fanartSortSelect.addEventListener('change', saveFanartSortPref);
+    fanartFilterSelect.addEventListener('change', saveFanartFilterPref);
+    fanartSortSelect.addEventListener('change', applyFanartFilterSort);
+    fanartFilterSelect.addEventListener('change', applyFanartFilterSort);
+    window.refreshFanartFilterSort = function(){
+      if(!fanartSortFilterRestored){
+        fanartSortFilterRestored = true;
+        try{
+          const savedSort = localStorage.getItem(FANART_SORT_PREF_KEY);
+          const savedFilter = localStorage.getItem(FANART_FILTER_PREF_KEY);
+          if(savedSort && Array.from(fanartSortSelect.options).some(o => o.value === savedSort)){
+            fanartSortSelect.value = savedSort;
+          }
+          if(savedFilter && Array.from(fanartFilterSelect.options).some(o => o.value === savedFilter)){
+            fanartFilterSelect.value = savedFilter;
+          }
+        }catch(e){}
+      }
+      applyFanartFilterSort();
+    };
+    // ギャラリーの読み込みを待たず、画面を開いた時点で、UIの見た目だけは
+    // 先に復元しておく(読み込みが遅れても、選択欄の表示がずれないように)。
+    window.refreshFanartFilterSort();
+
+    // Share room / ファンアート / R18 タブの切り替えと、R18側の年齢確認。
+    const tabShareroom = document.getElementById('fanartTabShareroom');
+    const tabFanart = document.getElementById('fanartTabFanart');
     const tabR18 = document.getElementById('fanartTabR18');
+    const tabDesc = document.getElementById('fanartTabDesc');
+    const r18Notice = document.getElementById('fanartR18Notice');
+    const howtoEl = document.getElementById('fanartHowto');
     const ageGate = document.getElementById('fanartAgeGate');
     const ageYesBtn = document.getElementById('fanartAgeYes');
     const ageNoBtn = document.getElementById('fanartAgeNo');
-    let currentTab = 'normal';
+    let currentTab = 'shareroom';
+    let lastPostingTab = 'shareroom'; // R18タブを見ている間も、投稿時にどちらのカテゴリにするか覚えておく
+    let isFanartLoggedIn = false;
+    const loginRequiredEl = document.getElementById('fanartLoginRequired');
+    document.getElementById('fanartLoginPromptBtn').addEventListener('click', async ()=>{
+      const siteFb = window.__siteFirebase;
+      if(!siteFb || !siteFb.ready) return;
+      try{ await siteFb.signInWithPopup(siteFb.auth, siteFb.provider); }
+      catch(err){ console.error('sign-in failed:', err); }
+    });
+    // 投稿フォームを見せるかどうかは、「今のタブがShare room/ファンアートか」と
+    // 「ログイン済みかどうか」の両方で決まる。ログインしていない間は、
+    // フォームの代わりにログインを促す案内を表示する。
+    // サイト全体で共有する、投稿の混雑状況。ページを開いた時に一度読み込んでおき、
+    // 混雑中であれば、投稿フォームの代わりに案内を表示する。
+    window.__siteBusy = false;
+    const busyNoticeEl = document.getElementById('fanartBusyNotice');
+    window.updateFanartFormVisibility = function(loggedIn){
+      isFanartLoggedIn = loggedIn;
+      const onPostableTab = (currentTab === 'shareroom' || currentTab === 'fanart');
+      if(onPostableTab && window.__siteBusy){
+        form.hidden = true;
+        loginRequiredEl.hidden = true;
+        busyNoticeEl.hidden = false;
+      }else if(onPostableTab && loggedIn){
+        form.hidden = false;
+        loginRequiredEl.hidden = true;
+        busyNoticeEl.hidden = true;
+      }else if(onPostableTab && !loggedIn){
+        form.hidden = true;
+        loginRequiredEl.hidden = false;
+        busyNoticeEl.hidden = true;
+      }else{
+        form.hidden = true;
+        loginRequiredEl.hidden = true;
+        busyNoticeEl.hidden = true;
+      }
+    };
+
+    const TAB_DESC = {
+      shareroom: {
+        ja: 'このサイトのファンアートに限らず、ご自身の作品を自由にリンクできる場所です。イラスト・音楽・文章など、紹介したいものを何でも投稿してください。',
+        en: 'A place to link to any artwork of yours — not limited to fan art of this site. Illustrations, music, writing, anything you\'d like to share.'
+      },
+      fanart: {
+        ja: 'みなさんが描いてくださったファンアートを紹介しています。Xなどに投稿された画像のURLを貼り付けてください。',
+        en: 'Please share your fan art. Paste a direct image link (not a post link) to submit.'
+      }
+    };
 
     function isAgeVerified(){
       try{ return sessionStorage.getItem('fanart-age-verified') === 'true'; }catch(e){ return false; }
@@ -2738,17 +3531,40 @@
     }
     function switchTab(tab){
       currentTab = tab;
-      tabNormal.classList.toggle('active', tab === 'normal');
+      tabShareroom.classList.toggle('active', tab === 'shareroom');
+      tabFanart.classList.toggle('active', tab === 'fanart');
       tabR18.classList.toggle('active', tab === 'r18');
-      tabNormal.setAttribute('aria-selected', tab === 'normal' ? 'true' : 'false');
+      tabShareroom.setAttribute('aria-selected', tab === 'shareroom' ? 'true' : 'false');
+      tabFanart.setAttribute('aria-selected', tab === 'fanart' ? 'true' : 'false');
       tabR18.setAttribute('aria-selected', tab === 'r18' ? 'true' : 'false');
+
+      if(tab === 'shareroom' || tab === 'fanart'){
+        lastPostingTab = tab;
+        const desc = TAB_DESC[tab];
+        tabDesc.textContent = isEnglish() ? desc.en : desc.ja;
+        tabDesc.dataset.en = desc.en;
+        tabDesc.hidden = false;
+        r18Notice.hidden = true;
+        howtoEl.hidden = false;
+      }else{
+        // R18タブ自体では投稿できないようにし、Share room/ファンアートから
+        // 投稿してもらうよう案内する(R18はあくまで「表示の絞り込み」)。
+        tabDesc.hidden = true;
+        r18Notice.hidden = false;
+        howtoEl.hidden = true;
+      }
+      window.updateFanartFormVisibility(isFanartLoggedIn);
       loadGallery();
     }
-    tabNormal.addEventListener('click', ()=> switchTab('normal'));
+    tabShareroom.addEventListener('click', ()=> switchTab('shareroom'));
+    tabFanart.addEventListener('click', ()=> switchTab('fanart'));
     tabR18.addEventListener('click', ()=>{
       if(isAgeVerified()){ switchTab('r18'); }
       else{ ageGate.hidden = false; }
     });
+    // ログイン状態が確定するまでの間は、念のため「未ログイン」扱いにしておく
+    // (フォームと案内の、どちらも表示されない空白状態になるのを防ぐため)。
+    window.updateFanartFormVisibility(false);
     ageYesBtn.addEventListener('click', ()=>{
       setAgeVerified();
       ageGate.hidden = true;
@@ -2756,26 +3572,108 @@
     });
     ageNoBtn.addEventListener('click', ()=>{
       ageGate.hidden = true;
-      switchTab('normal');
+      switchTab(lastPostingTab);
     });
 
     // 投稿者のBAN状態を確認する。BANされている場合、投稿できないようにする。
-    async function isCurrentUserBanned(){
+    // サイト全体で共有する、書き込みの混雑防止(誰か特定の1人を狙うのではなく、
+    // 「直近の一定時間に、サイト全体で行われた件数」を数え、閾値を超えたら、
+    // 一時的に受け付けないようにする、DoS対策)。投稿だけでなく、いいねや
+    // ニックネーム変更など、主な書き込みアクションすべてで、この同じ関数を使う
+    // (投稿以外の経路を使って、書き込み回数の上限を消費されることを防ぐため)。
+    // 時計のキリのいい区切り(0分・10分…)で数え直す方式だと、その境目の
+    // 前後を狙われて、短時間に2倍近い件数を通されてしまう恐れがあるため、
+    // 「上限に達した、まさにその瞬間から10分間」を完全にブロックする方式にしている。
+    const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // この時間の中で件数を数える
+    const RATE_LIMIT_MAX_ACTIONS = 40; // 投稿・いいね・ニックネーム変更などを合わせて、この件数に達したらブロック
+    const RATE_LIMIT_BLOCK_MS = 10 * 60 * 1000; // ブロックする長さ
+    window.checkSiteWriteRateLimit = async function(docId, isSignedInUser){
+      if(!fb) return true; // 未接続時は、判断できないので通す(誤検知でブロックしない)
+      const targetFb = isSignedInUser ? fb : window.__siteFirebase;
+      if(!targetFb) return true;
+      try{
+        const rateLimitRef = targetFb.doc(targetFb.db, 'siteConfig', docId);
+        let isBusy = false;
+        await targetFb.runTransaction(targetFb.db, async (tx)=>{
+          const snap = await tx.get(rateLimitRef);
+          const data = snap.exists() ? snap.data() : {};
+          const now = Date.now();
+          if(data.blockedUntil && now < data.blockedUntil){
+            isBusy = true;
+            return;
+          }
+          let windowStart = data.windowStart || now;
+          let count = data.count || 0;
+          if(now - windowStart >= RATE_LIMIT_WINDOW_MS){
+            windowStart = now;
+            count = 0;
+          }
+          count += 1;
+          if(count >= RATE_LIMIT_MAX_ACTIONS){
+            tx.set(rateLimitRef, { windowStart: now, count: 0, blockedUntil: now + RATE_LIMIT_BLOCK_MS });
+          }else{
+            tx.set(rateLimitRef, { windowStart: windowStart, count: count, blockedUntil: null });
+          }
+        });
+        if(isBusy){
+          window.__siteBusy = true;
+          if(typeof window.updateFanartFormVisibility === 'function') window.updateFanartFormVisibility(isFanartLoggedIn);
+        }
+        return !isBusy;
+      }catch(err){
+        console.error('rate limit check failed:', err);
+        return true; // 確認自体に失敗した場合は、誤検知でブロックしない
+      }
+    }
+
+    window.isCurrentUserBanned = async function(){
       const siteFb = window.__siteFirebase;
       if(!siteFb || !siteFb.ready || !siteFb.auth || !siteFb.auth.currentUser) return false;
       try{
         const snap = await siteFb.getDoc(siteFb.doc(siteFb.db, 'bannedUsers', siteFb.auth.currentUser.uid));
         return snap.exists();
       }catch(err){ console.error('ban check failed:', err); return false; }
-    }
+    };
+    const isCurrentUserBanned = window.isCurrentUserBanned;
 
     form.addEventListener('submit', async (e)=>{
       e.preventDefault();
+      const siteFbCheck = window.__siteFirebase;
+      if(!siteFbCheck || !siteFbCheck.ready || !siteFbCheck.auth || !siteFbCheck.auth.currentUser){
+        alert('投稿には、Googleアカウントでのログインが必要です。');
+        return;
+      }
       const url = urlInput.value.trim();
-      if(!/^https?:\/\/.+/i.test(url)){ return; }
+      if(!isAllowedMediaUrl(url)){
+        alert('対応していないURLです。X (Twitter)・YouTube・pixiv の、画像または動画のURLのみ投稿できます。');
+        return;
+      }
+      if(window.containsCodeLikeContent(nameInput.value)){
+        alert('お名前・ハンドルネームに、コードのような文字列は使用できません。');
+        return;
+      }
       if(!fb || !fb.ready){ alert('現在投稿を受け付けられません。時間をおいて再度お試しください。'); return; }
       if(window.__quotaExceeded){
         alert('現在アクセスが集中しているため、投稿を一時的に停止しています。時間をおいて再度お試しください。');
+        return;
+      }
+      // サイト全体の書き込み混雑防止を確認する(投稿・いいね・ニックネーム変更で共通)。
+      const okToProceed = await window.checkSiteWriteRateLimit('writeRateLimit', true);
+      if(!okToProceed){
+        alert('サイトが混み合っております。作品の投稿はしばらくお待ちください。');
+        return;
+      }
+      // 連続投稿への抑止(荒らし・スパム対策)。
+      // このブラウザだけの記録(localStorage)に加えて、ログイン時に読み込んでおいた
+      // 「このアカウントでの前回投稿時刻」も見て、どちらか新しい方を基準にする。
+      // これにより、画面を再読み込みしても、別の端末からログインし直しても、
+      // 実際に投稿ボタンを押した瞬間には、新たな通信なしに正しく判定できる。
+      const COOLDOWN_MS = 60000; // 60秒
+      const lastPostAtLocal = Number(localStorage.getItem('fanart-last-post-at') || 0);
+      const lastPostAt = Math.max(lastPostAtLocal, window.__lastFanartPostAtFromServer || 0);
+      if(Date.now() - lastPostAt < COOLDOWN_MS){
+        const waitSec = Math.ceil((COOLDOWN_MS - (Date.now() - lastPostAt)) / 1000);
+        alert(`連続投稿を防ぐため、少し間を空けてください。あと約${waitSec}秒でもう一度投稿できます。`);
         return;
       }
       submitBtn.disabled = true;
@@ -2787,24 +3685,74 @@
       const isR18 = document.getElementById('fanartIsR18').checked;
       const siteFb = window.__siteFirebase;
       const authorUid = (siteFb && siteFb.auth && siteFb.auth.currentUser) ? siteFb.auth.currentUser.uid : null;
+      const postCategory = lastPostingTab; // 投稿時に開いているタブ(Share room / ファンアート)がそのままカテゴリになる
+      const pickupFocusX = parseInt(document.getElementById('fanartPickupFocusX').value, 10) || 50;
+      const pickupFocusY = parseInt(document.getElementById('fanartPickupFocusY').value, 10) || 50;
+      const pickupExcluded = document.getElementById('fanartPickupExcluded').checked;
+
+      // クールダウンの「本当の確認」。上の簡易チェックは、あくまで即座に反応を返す
+      // ためのもので、複数の端末からほぼ同時に投稿された場合までは防ぎきれない。
+      // ここでは、Firestoreの「トランザクション」という、絶対に競合しない仕組みを使い、
+      // 「クールダウン中かどうかの確認」と「投稿した記録の更新」を、
+      // 不可分な1つの操作としてまとめている。これにより、複数の端末から
+      // どれだけ近いタイミングで投稿されても、必ず正しい順番で1つずつ処理され、
+      // 同時投稿が成立することはない(ログインの仕組みや画面には、一切影響しない)。
+      if(authorUid && fb.runTransaction){
+        try{
+          let waitSec = 0;
+          await fb.runTransaction(fb.db, async (tx)=>{
+            const userRef = fb.doc(fb.db, 'users', authorUid);
+            const snap = await tx.get(userRef);
+            const data = snap.exists() ? snap.data() : {};
+            const ts = data.lastFanartPostAt;
+            const lastPostAtServer = ts ? (ts.toDate ? ts.toDate().getTime() : new Date(ts).getTime()) : 0;
+            const elapsed = Date.now() - lastPostAtServer;
+            if(elapsed < COOLDOWN_MS){
+              waitSec = Math.ceil((COOLDOWN_MS - elapsed) / 1000);
+              throw new Error('__COOLDOWN_ACTIVE__');
+            }
+            tx.set(userRef, { lastFanartPostAt: fb.serverTimestamp() }, { merge:true });
+          });
+          window.__lastFanartPostAtFromServer = Date.now();
+        }catch(err){
+          submitBtn.disabled = false;
+          if(err && err.message === '__COOLDOWN_ACTIVE__'){
+            alert(`連続投稿を防ぐため、少し間を空けてください。あと約${waitSec}秒でもう一度投稿できます。`);
+          }else{
+            console.error('cooldown transaction failed:', err);
+            alert('投稿に失敗しました。時間をおいて再度お試しください。');
+          }
+          return;
+        }
+      }
       try{
         const docRef = await fb.addDoc(fb.collection(fb.db, 'fanart'), {
           imageUrl: url,
-          name: nameInput.value.trim().slice(0,40),
+          name: window.stripInvisibleChars(nameInput.value.trim()).slice(0,10),
           likes: 0,
           isR18: isR18,
+          category: postCategory,
           authorUid: authorUid,
+          pickupFocusX: pickupFocusX,
+          pickupFocusY: pickupFocusY,
+          pickupExcluded: pickupExcluded,
           createdAt: fb.serverTimestamp()
         });
-        if((isR18 && currentTab === 'r18') || (!isR18 && currentTab === 'normal')){
-          renderCard({ id:docRef.id, imageUrl:url, name:nameInput.value.trim(), likes:0, isR18:isR18, authorUid:authorUid, createdAt:new Date() });
+        // 今見えている一覧(現在のタブ)に該当する投稿だった場合だけ、その場に追加表示する。
+        const matchesCurrentView = currentTab === 'r18' ? isR18 : (!isR18 && currentTab === postCategory);
+        if(matchesCurrentView){
+          renderCard({ id:docRef.id, imageUrl:url, name:window.stripInvisibleChars(nameInput.value.trim()).slice(0,10), likes:0, isR18:isR18, category:postCategory, authorUid:authorUid, createdAt:new Date() });
+          if(typeof window.refreshFanartFilterSort === 'function') window.refreshFanartFilterSort();
           emptyMsg.hidden = true;
         }
         if(authorUid && typeof AchievementModule !== 'undefined'){
           AchievementModule.unlock('fanart-poster');
           AchievementModule.unlockUnique('first-fanart', 5);
         }
+        localStorage.setItem('fanart-last-post-at', String(Date.now()));
         form.reset();
+        resetPickupSetting();
+        previewBox.hidden = true;
       }catch(err){
         console.error('submit failed:', err);
         alert('投稿に失敗しました。画像のURLをご確認の上、もう一度お試しください。');
@@ -2816,6 +3764,18 @@
     function initWhenReady(){
       fb = window.__fanartFirebase;
       loadGallery();
+      checkSiteBusyStatus();
+    }
+    // ページを開いた時点で、今が「混雑中」かどうかを、データベースから読み取るだけ
+    // (書き込みは行わない)。混雑中であれば、フォームの代わりに案内を表示する。
+    async function checkSiteBusyStatus(){
+      if(!fb || !fb.ready) return;
+      try{
+        const snap = await fb.getDoc(fb.doc(fb.db, 'siteConfig', 'writeRateLimit'));
+        const data = snap.exists() ? snap.data() : {};
+        window.__siteBusy = !!(data.blockedUntil && Date.now() < data.blockedUntil);
+        if(typeof window.updateFanartFormVisibility === 'function') window.updateFanartFormVisibility(isFanartLoggedIn);
+      }catch(err){ console.error('site busy check failed:', err); }
     }
     if(window.__fanartFirebase && window.__fanartFirebase.ready !== undefined){
       initWhenReady();
@@ -2876,6 +3836,10 @@
       }
     }
 
+    // ログイン中のアカウントの「前回の投稿時刻」を覚えておく変数。
+    // ページを開いた時(ログイン確認と同時)に一度だけ読み込んでおくことで、
+    // 実際に投稿ボタンを押した瞬間には、新たな通信をせずにクールダウンを判定できる。
+    window.__lastFanartPostAtFromServer = 0;
     async function loadNickname(uid){
       const fb = window.__siteFirebase;
       if(!fb || !fb.ready) return;
@@ -2885,6 +3849,12 @@
         if(snap.exists() && snap.data().theme){
           applyTheme(snap.data().theme);
           try{ localStorage.setItem('site-theme', snap.data().theme); }catch(e){}
+        }
+        if(snap.exists() && snap.data().lastFanartPostAt){
+          const ts = snap.data().lastFanartPostAt;
+          window.__lastFanartPostAtFromServer = (ts.toDate ? ts.toDate() : new Date(ts)).getTime();
+        }else{
+          window.__lastFanartPostAtFromServer = 0;
         }
       }catch(err){ console.error('failed to load nickname:', err); }
     }
@@ -2898,7 +3868,22 @@
     async function saveNickname(){
       const fb = window.__siteFirebase;
       if(!fb || !fb.ready || !fb.auth.currentUser) return;
-      const value = nicknameInput.value.trim().slice(0, 20);
+      if(typeof window.isCurrentUserBanned === 'function' && await window.isCurrentUserBanned()){
+        alert('このアカウントは、一部の操作を停止されています。');
+        return;
+      }
+      const value = (typeof window.stripInvisibleChars === 'function' ? window.stripInvisibleChars(nicknameInput.value.trim()) : nicknameInput.value.trim()).slice(0, 20);
+      if(value && typeof window.containsCodeLikeContent === 'function' && window.containsCodeLikeContent(value)){
+        alert('ニックネームに、コードのような文字列は使用できません。');
+        return;
+      }
+      if(typeof window.checkSiteWriteRateLimit === 'function'){
+        const okToProceed = await window.checkSiteWriteRateLimit('writeRateLimit', true);
+        if(!okToProceed){
+          alert('サイトが混み合っております。しばらくお待ちください。');
+          return;
+        }
+      }
       try{
         await fb.setDoc(fb.doc(fb.db, 'users', fb.auth.currentUser.uid), { nickname: value || null }, { merge:true });
         currentNickname = value || null;
@@ -2929,6 +3914,7 @@
       fb.onAuthStateChanged(fb.auth, async (user)=>{
         if(user) await loadNickname(user.uid);
         applyAuthUi(user);
+        if(typeof updateFanartFormVisibility === 'function') updateFanartFormVisibility(!!user);
         if(typeof FavModule !== 'undefined') FavModule.setUser(user ? user.uid : null);
         if(typeof AchievementModule !== 'undefined'){
           if(user){
@@ -3001,7 +3987,7 @@
           return;
         }
         try{
-          const snap = await fb.getDocs(fb.collection(fb.db, 'presence'));
+          const snap = await fb.getDocs(fb.query(fb.collection(fb.db, 'presence'), fb.limit(200))); // 1回の読み込みで取得する上限を設け、際限なく増える読み込みを防ぐ
           const now = Date.now();
           let activeOthers = 0;
           snap.forEach(d=>{

@@ -32,10 +32,17 @@
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;600;700&family=Zen+Kaku+Gothic+New:wght@400&family=Cormorant+Garamond:ital,wght@1,400&display=swap" onload="this.onload=null;this.rel='stylesheet'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;600;700&family=Zen+Kaku+Gothic+New:wght@400&family=Cormorant+Garamond:ital,wght@1,400&display=swap" rel="stylesheet"></noscript>
 <!-- Firebase(ログイン・お気に入り同期に使用) -->
+<!-- SRI(改ざん防止)対応の準備。本番運用を開始する前に、正しいハッシュ値を
+     計算し、下の3つのmodulepreloadタグに integrity="sha384-..." を追加してください
+     (手順は firebase-sri-setup.md をご覧ください)。ハッシュ値を入れるまでは、
+     modulepreloadだけが効いた状態(読み込みの高速化のみ)になります。 -->
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js" crossorigin="anonymous">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js" crossorigin="anonymous">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js" crossorigin="anonymous">
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, addDoc, orderBy, query, updateDoc, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, addDoc, orderBy, query, limit, updateDoc, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
   // ここに、ご自身のFirebaseプロジェクトの設定値を入力してください。
   // (ファンアートページで使っているものと、同じ値を入れてください。)
@@ -54,7 +61,7 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
     const provider = new GoogleAuthProvider();
-    window.__siteFirebase = { auth, db, provider, signInWithPopup, signOut, onAuthStateChanged, doc, getDoc, setDoc, deleteDoc, collection, getDocs, addDoc, orderBy, query, updateDoc, serverTimestamp, runTransaction, ready:true };
+    window.__siteFirebase = { auth, db, provider, signInWithPopup, signOut, onAuthStateChanged, doc, getDoc, setDoc, deleteDoc, collection, getDocs, addDoc, orderBy, query, limit, updateDoc, serverTimestamp, runTransaction, ready:true };
   }catch(err){
     console.error('Firebase init failed:', err);
     window.__siteFirebase = { ready:false };
@@ -66,9 +73,31 @@
   // これを通さずに直接HTMLに埋め込むと、悪意のある入力によって任意のコードが実行されてしまう
   // (XSS脆弱性)ため、ユーザーが入力した文字列を表示する場所では、必ず使用すること。
   window.escapeHtml = function(str){
-    const div = document.createElement('div');
-    div.textContent = str == null ? '' : String(str);
-    return div.innerHTML;
+    // 属性値(例:src="...")の中で使っても安全なように、
+    // < > & に加えて、二重引用符・単引用符もすべて実体参照に置き換える。
+    if(str == null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  };
+  // HTML用のescapeHtmlとは、目的も置き場所も別のエスケープ。
+  // onerror="...'ここに値を入れる'..." のように、JavaScriptの文字列リテラルの
+  // 「中」に値を埋め込む場合は、HTMLの記号(< > など)ではなく、その文字列リテラル
+  // 自体を壊せる記号(引用符・バックスラッシュ・改行)を無害化する必要がある。
+  // HTML用のエスケープだけでは、この場所は守れない。
+  window.escapeJsString = function(str){
+    if(str == null) return '';
+    return String(str)
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r')
+      .replace(/</g, '\\x3C') // 閉じタグ('<'+'/script>'のような形)で、囲っているタグ自体を破壊できないようにする
+      .replace(/>/g, '\\x3E');
   };
 </script>
 <script>
@@ -90,6 +119,19 @@
   *{ box-sizing:border-box; }
   
   html, body{ touch-action:pan-x pan-y; }
+  
+  .network-status-banner{
+    position:fixed; top:0; left:0; right:0; z-index:9999;
+    padding:9px 16px; text-align:center; font-family:var(--f-gothic);
+    font-size:calc(12.5px * var(--font-scale, 1)); letter-spacing:.04em;
+    color:#fff; transform:translateY(-100%); transition:transform .3s ease;
+  }
+  
+  .network-status-banner.show{ transform:translateY(0); }
+  
+  .network-status-banner.offline{ background:var(--bengara); }
+  
+  .network-status-banner.online{ background:#3E6B4F; }
   
   html{
     scroll-behavior:smooth;
@@ -121,6 +163,13 @@
     display:flex; align-items:center; justify-content:space-between;
     padding:calc(22px + env(safe-area-inset-top)) 6vw 22px;
     transition:background-color .5s ease, padding .4s ease, box-shadow .4s ease;
+    /* Safariはアドレスバーが縮む瞬間、position:fixed要素の
+       位置の再計算が一瞬遅れることがあり、その間メニューバーの下側が
+       欠けて見えることがある。独立した合成レイヤーとして扱わせることで、
+       この遅れを防ぐ、Safariで広く知られている対策。 */
+    -webkit-transform:translateZ(0);
+    transform:translateZ(0);
+    will-change:transform;
   }
   
   header.scrolled{
@@ -173,6 +222,7 @@
   
   .settings-row{
     display:flex; align-items:center; justify-content:space-between; gap:14px;
+    flex-wrap:wrap; row-gap:10px;
   }
   
   .settings-row + .settings-row{ margin-top:18px; }
@@ -213,12 +263,18 @@
   
   .bottom-sheet-handle{
     width:40px; height:4px; border-radius:2px; background:var(--line);
-    margin:12px auto 4px;
+    margin:12px auto 4px; position:relative; touch-action:none;
+  }
+  /* 見た目の太さ(4px)はそのままに、実際に指で掴める範囲だけを広げる */
+  .bottom-sheet-handle::before{
+    content:''; position:absolute; left:50%; top:50%;
+    width:120px; height:44px; transform:translate(-50%,-50%);
   }
   
   .bottom-sheet-head{
     display:flex; align-items:center; justify-content:space-between;
     padding:8px 24px 16px; border-bottom:1px solid var(--line);
+    touch-action:none;
   }
   
   .bottom-sheet-head h3{
@@ -230,15 +286,15 @@
   .bottom-sheet-close svg{ width:14px; height:14px; stroke:var(--sumi); }
   
   .rewatch-list{
-    display:flex; gap:16px; overflow-x:auto; padding:20px 24px 28px;
+    display:grid; grid-template-columns:repeat(2,1fr); gap:18px 16px; padding:20px 24px 28px;
   }
   
   .rewatch-item{
-    flex:none; width:130px; cursor:pointer;
+    width:100%; cursor:pointer;
   }
   
   .rewatch-thumb{
-    width:130px; height:130px; border-radius:6px; position:relative; overflow:hidden;
+    width:100%; aspect-ratio:1; border-radius:6px; position:relative; overflow:hidden;
   }
   
   .rewatch-item p{
@@ -266,9 +322,14 @@
   }
   
   .qr-modal img{
-    display:block; margin:0 auto; border-radius:4px;
+    display:block; margin:0 auto; border-radius:6px;
     width:220px; height:220px; object-fit:contain;
-    background:var(--kinari-2); font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi);
+    /* QRコード自体は読み取り精度を保つため単色のままにし、
+       その周りの余白(額縁)部分にだけ、和風の二色グラデーションをかける。 */
+    background:linear-gradient(135deg, var(--ai) 0%, var(--bengara) 100%);
+    padding:14px;
+    box-sizing:border-box;
+    font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi);
   }
   
   .qr-modal-url{
@@ -706,6 +767,25 @@
     display:flex; align-items:center; justify-content:center; cursor:pointer; transition:border-color .3s ease, background .3s ease;
   }
   
+  .bgm-controls{ display:flex; align-items:center; gap:6px; }
+  
+  .bgm-nav-btn{
+    width:24px; height:24px; border-radius:50%; border:1px solid var(--line); background:transparent;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; flex:none;
+    transition:border-color .3s ease;
+  }
+  
+  .bgm-nav-btn:hover{ border-color:var(--bengara); }
+  
+  .bgm-nav-btn svg{ width:11px; height:11px; color:var(--sumi); }
+  
+  .bgm-track-name{
+    text-align:right; font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi);
+    margin-top:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  
+  .bgm-track-name:empty{ display:none; }
+  
   .bottom-sheet-close{
     width:32px; height:32px; border-radius:50%; border:1px solid var(--line); background:transparent;
     display:flex; align-items:center; justify-content:center; cursor:pointer; flex:none;
@@ -713,7 +793,7 @@
   
 
   /* Bookmarks:見たもの/実績 タブ */
-  .bookmark-tabs{ display:flex; gap:10px; padding:16px 24px 0; flex:none; }
+  .bookmark-tabs{ display:flex; gap:10px; padding:16px 24px 14px; flex:none; }
   
   .bookmark-tab{
     font-family:var(--f-gothic); font-size:calc(12.5px * var(--font-scale, 1)); letter-spacing:.04em;
@@ -723,7 +803,7 @@
   
   .bookmark-tab.active{ background:var(--bengara); border-color:var(--bengara); color:var(--kinari); }
   
-  .bookmark-panel{ overflow-y:auto; }
+  .bookmark-panel{ overflow-y:auto; flex:1; min-height:0; -webkit-overflow-scrolling:touch; }
   
   .bookmark-panel[hidden]{ display:none; }
   
@@ -1156,7 +1236,7 @@
   
   .work-comment-count svg{ width:12px; height:12px; stroke:var(--usuzumi); flex:none; }
   
-  .works-search{ margin-top:18px; margin-bottom:44px; }
+  .works-search{ margin-top:18px; margin-bottom:44px; display:flex; gap:12px; flex-wrap:wrap; }
   
   .works-sort-select{
     flex:none; font-family:var(--f-gothic); font-size:max(16px, calc(13px * var(--font-scale, 1))); color:var(--sumi);
@@ -1272,34 +1352,59 @@
   [data-site-theme="dark"] .tags li{ color:var(--bengara); }
   
 
-  .pickup-card{
-    display:grid; grid-template-columns:1fr 1fr; gap:50px; align-items:center;
-    color:inherit;
+  .pickup-carousel{
+    position:relative; width:100%; aspect-ratio:16/9; max-width:900px;
+    border-radius:6px; overflow:hidden; box-shadow:var(--paper-shadow);
   }
   
-  .pickup-thumb{
-    aspect-ratio:4/3; border-radius:6px; overflow:hidden; position:relative;
-    box-shadow:var(--paper-shadow);
+  .pickup-track{
+    display:flex; width:100%; height:100%; transition:transform .8s cubic-bezier(.65,0,.35,1);
   }
   
-  .pickup-thumb img{ width:100%; height:100%; object-fit:cover; }
-  
-  .pickup-no{
-    font-family:var(--f-latin); font-style:italic; font-size:calc(13px * var(--font-scale, 1)); color:var(--bengara); letter-spacing:.05em;
+  .pickup-slide{
+    flex:none; width:100%; height:100%; position:relative; display:block; color:inherit;
   }
   
-  .pickup-info h3{
-    font-family:var(--f-mincho); font-size:calc(30px * var(--font-scale, 1)); margin:10px 0 8px;
+  .pickup-slide-thumb{ position:absolute; inset:0; }
+  
+  .pickup-slide-thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
+  
+  .pickup-slide-overlay{
+    position:absolute; inset:0; background:linear-gradient(to top, rgba(20,16,14,.78) 0%, rgba(20,16,14,.15) 45%, rgba(20,16,14,0) 70%);
   }
   
-  .pickup-meta-row{ display:flex; align-items:baseline; gap:12px; margin-bottom:18px; }
+  .pickup-slide-info{
+    position:absolute; left:0; right:0; bottom:0; padding:20px 26px 22px; color:#F6F1E6;
+  }
   
-  .pickup-meta{ font-size:calc(12px * var(--font-scale, 1)); color:var(--usuzumi); letter-spacing:.08em; }
+  .pickup-slide-category{
+    display:inline-block; font-size:calc(11px * var(--font-scale, 1)); letter-spacing:.12em;
+    border:1px solid rgba(246,241,230,.6); border-radius:20px; padding:4px 14px; margin-bottom:10px;
+  }
   
-  .pickup-info p:not(.pickup-meta){ font-size:calc(14px * var(--font-scale, 1)); color:var(--sumi); line-height:1.95; }
+  .pickup-slide-info h3{
+    font-family:var(--f-mincho); font-size:calc(22px * var(--font-scale, 1)); margin-bottom:4px;
+    text-shadow:0 1px 6px rgba(0,0,0,.4);
+  }
   
-  @media (max-width:860px){
-    .pickup-card{ grid-template-columns:1fr; gap:26px; }
+  .pickup-slide-meta{ font-size:calc(11.5px * var(--font-scale, 1)); opacity:.85; letter-spacing:.06em; }
+  
+  .pickup-dots{
+    position:absolute; left:50%; bottom:14px; transform:translateX(-50%);
+    display:flex; gap:8px; z-index:2;
+  }
+  
+  .pickup-dot{
+    width:7px; height:7px; border-radius:50%; background:rgba(246,241,230,.5);
+    transition:background .3s ease, transform .3s ease; cursor:pointer; border:none; padding:0;
+  }
+  
+  .pickup-dot.active{ background:#F6F1E6; transform:scale(1.3); }
+  
+  .pickup-empty{ color:var(--usuzumi); font-size:calc(13px * var(--font-scale, 1)); }
+  
+  @media (max-width:600px){
+    .pickup-carousel{ border-radius:0; }
   }
   
 
@@ -1448,6 +1553,31 @@
     color:var(--usuzumi); margin-bottom:14px;
   }
   
+  .lb-related{ margin-top:24px; padding-top:24px; border-top:1px solid var(--line); }
+  
+  .lb-related-label{
+    font-family:var(--f-mincho); font-size:calc(13px * var(--font-scale, 1)); letter-spacing:.1em;
+    color:var(--usuzumi); margin-bottom:14px;
+  }
+  
+  .lb-related-grid{ display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; }
+  
+  .lb-related-item{
+    cursor:pointer; aspect-ratio:1/1; border-radius:3px; overflow:hidden; position:relative;
+    background:var(--kinari-2); border:1px solid var(--line); transition:opacity .25s ease;
+  }
+  
+  .lb-related-item:hover{ opacity:.8; }
+  
+  .lb-related-item img{ width:100%; height:100%; object-fit:cover; display:block; }
+  
+  .lb-related-item-title{
+    position:absolute; left:0; right:0; bottom:0; padding:6px 8px;
+    background:linear-gradient(to top, rgba(0,0,0,.6), rgba(0,0,0,0));
+    color:#fff; font-size:calc(10.5px * var(--font-scale, 1)); line-height:1.4;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  
   .lb-close{
     position:absolute; top:-16px; right:-16px; width:38px; height:38px;
     background:var(--sumi); border:1px solid var(--kinari);
@@ -1524,6 +1654,13 @@
   .mail-field input:focus, .mail-field textarea:focus{
     outline:none; border-color:var(--bengara);
   }
+  
+  .mail-char-count{
+    display:block; text-align:right; font-size:calc(11px * var(--font-scale, 1));
+    color:var(--usuzumi); margin-top:4px; margin-bottom:0;
+  }
+  
+  .mail-char-count.over-limit{ color:var(--bengara); font-weight:600; }
   
   .mail-submit{
     width:100%; justify-content:center; margin-top:8px; font-size:calc(15px * var(--font-scale, 1)); padding:14px 20px;
@@ -1700,6 +1837,7 @@
 </style>
 </head>
 <body>
+<div class="network-status-banner" id="networkStatusBanner" hidden></div>
 <script>
   // 同じブラウザであれば、以前選んだダーク/ライトの状態を引き継ぐ。
   // (保存されていなければ、これまで通りライトモードを既定値にする。)
@@ -1709,6 +1847,64 @@
   }catch(e){
     document.documentElement.setAttribute('data-site-theme', 'light');
   }
+</script>
+<script>
+  // 通信が切れた時に、それとなく知らせる。投稿・いいねなどをしようとした瞬間に、
+  // 原因不明のエラーに見えてしまうのを防ぐための、控えめな配慮。
+  (function(){
+    const banner = document.getElementById('networkStatusBanner');
+    if(!banner) return;
+    let hideTimer = null;
+    function showOffline(){
+      clearTimeout(hideTimer);
+      banner.textContent = '通信が切れているようです。投稿やいいねなどの操作ができない場合があります。';
+      banner.className = 'network-status-banner offline show';
+      banner.hidden = false;
+    }
+    function showOnlineBriefly(){
+      clearTimeout(hideTimer);
+      banner.textContent = '通信が回復しました。';
+      banner.className = 'network-status-banner online show';
+      banner.hidden = false;
+      hideTimer = setTimeout(()=>{
+        banner.classList.remove('show');
+        setTimeout(()=>{ banner.hidden = true; }, 300);
+      }, 2500);
+    }
+    window.addEventListener('offline', showOffline);
+    window.addEventListener('online', showOnlineBriefly);
+    // ページを開いた時点で、既にオフラインだった場合にも対応する。
+    if(!navigator.onLine) showOffline();
+  })();
+</script>
+<script>
+  // 通信が切れた時に、それとなく知らせる。投稿やいいねをしようとした瞬間に、
+  // 実は圏外だった、という状況で、原因不明のエラーに見えてしまうのを防ぐ。
+  (function(){
+    const banner = document.getElementById('networkStatusBanner');
+    if(!banner) return;
+    let hideTimer = null;
+    function showOffline(){
+      clearTimeout(hideTimer);
+      banner.textContent = '通信が切れているようです。投稿やいいねなどの操作ができない場合があります。';
+      banner.className = 'network-status-banner offline show';
+      banner.hidden = false;
+    }
+    function showOnlineBriefly(){
+      clearTimeout(hideTimer);
+      banner.textContent = '通信が回復しました。';
+      banner.className = 'network-status-banner online show';
+      banner.hidden = false;
+      hideTimer = setTimeout(()=>{
+        banner.classList.remove('show');
+        setTimeout(()=>{ banner.hidden = true; }, 300);
+      }, 2500);
+    }
+    window.addEventListener('offline', showOffline);
+    window.addEventListener('online', showOnlineBriefly);
+    // ページを開いた時点で、既に通信が切れていた場合にも対応する。
+    if(!navigator.onLine) showOffline();
+  })();
 </script>
 
 
@@ -1809,9 +2005,8 @@
         </li>
         <li><a href="#profile">Profile<span class="nav-jp">-経歴-</span></a></li>
         <li><a href="#contact">Contact<span class="nav-jp">-連絡先-</span></a></li>
+        <li><a href="fanart.html">Platform<span class="nav-jp">-ツイート-</span></a></li>
         <li><a href="faq.html">FAQ<span class="nav-jp">-よくある質問-</span></a></li>
-        <li><a href="fanart.html">Fan Art<span class="nav-jp">-ファンアート-</span></a></li>
-        <li><a href="guidelines.html">Guidelines<span class="nav-jp">-ガイドライン-</span></a></li>
         <li><a href="#" id="navRewatch">Bookmarks<span class="nav-jp">-しおり-</span></a></li>
         <li><a href="#" id="navQr">QR Code<span class="nav-jp">-二次元コード-</span></a></li>
       </ul>
@@ -1876,18 +2071,24 @@
     </div>
     <div class="settings-row">
       <span class="settings-row-label">BGM</span>
-      <button class="bgm-toggle" id="bgmToggle" aria-label="BGMを再生" aria-pressed="false">
-        <svg class="bgm-icon-play" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14l11-7z"/></svg>
-        <svg class="bgm-icon-pause" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M7 5v14M17 5v14"/></svg>
-      </button>
+      <div class="bgm-controls">
+        <button class="bgm-nav-btn" id="bgmPrevBtn" aria-label="前の曲">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM18 6v12l-9-6z"/></svg>
+        </button>
+        <button class="bgm-toggle" id="bgmToggle" aria-label="BGMを再生" aria-pressed="false">
+          <svg class="bgm-icon-play" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14l11-7z"/></svg>
+          <svg class="bgm-icon-pause" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M7 5v14M17 5v14"/></svg>
+        </button>
+        <button class="bgm-nav-btn" id="bgmNextBtn" aria-label="次の曲">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 6v12l9-6z"/></svg>
+        </button>
+      </div>
     </div>
-    <audio id="bgmAudio" loop preload="none">
-      <!-- 実際のBGMファイルが用意できたら、下記のsrcを差し替えてください -->
-      <source src="REPLACE_WITH_YOUR_BGM_FILE.mp3" type="audio/mpeg">
-    </audio>
+    <p class="bgm-track-name" id="bgmTrackName"></p>
+    <audio id="bgmAudio" preload="none"></audio>
   </div>
   <div class="site-search-panel" id="siteSearchPanel" hidden>
-    <input type="search" id="siteSearchInput" class="site-search-input" placeholder="サイト内を検索..." aria-label="サイト内検索">
+    <input type="search" id="siteSearchInput" class="site-search-input" maxlength="20" placeholder="サイト内を検索..." aria-label="サイト内検索">
     <ul class="site-search-results" id="siteSearchResults"></ul>
     <p class="site-search-empty" id="siteSearchEmpty" hidden>一致する内容が見つかりませんでした。</p>
   </div>
@@ -1903,7 +2104,7 @@
     </button>
   </div>
   <div class="bookmark-tabs">
-    <button type="button" class="bookmark-tab active" data-bmtab="viewed">見たもの一覧</button>
+    <button type="button" class="bookmark-tab active" data-bmtab="viewed">閲覧履歴</button>
     <button type="button" class="bookmark-tab" data-bmtab="achievements">実績一覧</button>
   </div>
 
@@ -1983,27 +2184,17 @@
   <section id="pickup" class="pickup-section">
     <div class="wrap">
       <div class="sec-head reveal">
-        <div class="sec-label i18n" data-en="Pick Up">今 月 の 一 枚</div>
+        <div class="sec-label i18n" data-en="Pick Up">今 日 の 一 枚</div>
         <div>
-          <h2 class="i18n" data-en="This Month's Pick">今月のピックアップ</h2>
-          <p class="i18n" data-en="A rotating spotlight on one piece from the collection, chosen automatically each month.">毎月自動的に選ばれる、作品の中からの1枚をご紹介します。</p>
+          <h2 class="i18n" data-en="Today's Pick">今日のピックアップ</h2>
+          <p class="i18n" data-en="Three picks, chosen automatically each day: one work, one Share room post, and one piece of fan art.">毎日自動的に選ばれる、作品・Share room・ファンアートから、それぞれ1枚をご紹介します。</p>
         </div>
       </div>
-      <a href="#" class="pickup-card reveal" id="pickupCard">
-        <div class="pickup-thumb" id="pickupThumb"></div>
-        <div class="pickup-info">
-          <span class="pickup-no" id="pickupNo"></span>
-          <h3 id="pickupTitle"></h3>
-          <span class="pickup-meta-row">
-            <p class="pickup-meta" id="pickupMeta"></p>
-            <span class="work-comment-count">
-              <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-              <span class="disqus-comment-count" id="pickupCommentCount" data-disqus-identifier="" data-disqus-url="">0</span>
-            </span>
-          </span>
-          <p id="pickupDesc"></p>
-        </div>
-      </a>
+      <div class="pickup-carousel reveal" id="pickupCarousel" hidden>
+        <div class="pickup-track" id="pickupTrack"></div>
+        <div class="pickup-dots" id="pickupDots"></div>
+      </div>
+      <p class="pickup-empty" id="pickupEmpty" hidden>今日のピックアップは、準備中です。</p>
     </div>
   </section>
 
@@ -2027,10 +2218,14 @@
 
       <div class="works-collapsible" id="worksCollapsible">
         <div class="works-search">
+          <select id="worksFilter" class="works-sort-select" aria-label="絞り込み">
+            <option value="all">すべて</option>
+          </select>
           <select id="worksSort" class="works-sort-select" aria-label="並び替え">
             <option value="new">新しい順</option>
             <option value="old">古い順</option>
             <option value="popular">人気順</option>
+            <option value="title">タイトル順</option>
           </select>
         </div>
         <div class="works-grid" id="worksGrid"></div>
@@ -2147,6 +2342,10 @@
         <p class="lb-comments-label i18n" data-en="Comments">感想・コメント</p>
         <div id="discussThread"></div>
       </div>
+      <div class="lb-related" id="lbRelated" hidden>
+        <p class="lb-related-label i18n" data-en="Related works">関連する作品</p>
+        <div class="lb-related-grid" id="lbRelatedGrid"></div>
+      </div>
     </div>
     <div class="lb-close" id="lbClose"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l16 16M20 4L4 20"/></svg></div>
   </div>
@@ -2169,14 +2368,17 @@
       <label class="mail-field">
         <span class="i18n" data-en="Name">お名前</span>
         <input type="text" id="mailName" name="name" required>
+        <span class="mail-char-count" id="mailNameCount">0 / 30字</span>
       </label>
       <label class="mail-field">
         <span class="i18n" data-en="Your email address">ご自身のメールアドレス</span>
         <input type="email" id="mailFrom" name="from" required>
+        <span class="mail-char-count" id="mailFromCount">0 / 100字</span>
       </label>
       <label class="mail-field">
         <span class="i18n" data-en="Message">メッセージ</span>
         <textarea id="mailBody" name="message" rows="6" required></textarea>
+        <span class="mail-char-count" id="mailBodyCount">0 / 350字</span>
       </label>
       <button type="submit" class="mail-btn mail-submit">
         <span class="i18n" data-en="Choose how to send">送信方法を選ぶ</span>
@@ -2497,10 +2699,8 @@
       : (isEnglish() ? 'Add to favorites' : 'お気に入りに追加'));
   }
 
-  // Shared like-count via Abacus (free, no-signup counter API: https://abacus.jasoncameron.dev)
-  // Counts only ever go up (no secure decrement without an admin key), and each browser
-  // only contributes +1 the first time it ever favorites a given piece.
-  const COUNTER_NAMESPACE = 'oshitemairu-portfolio';
+  // お気に入りに追加した時、そのまま「いいね」としても1回だけ加算する仕組み。
+  // 保存先は、他の作品ページ(音楽・小説・映像・ファンアート)と同じ、Firestoreのlikesフィールド。
   const LIKED_ONCE_KEY = 'portfolio-liked-once';
   function getLikedOnce(){
     try{ return new Set(JSON.parse(localStorage.getItem(LIKED_ONCE_KEY) || '[]')); }
@@ -2511,26 +2711,36 @@
   }
   let likedOnce = getLikedOnce();
 
-  function counterUrl(action, id){
-    return `https://abacus.jasoncameron.dev/${action}/${COUNTER_NAMESPACE}/${id}-likes`;
+  // いいね数は「0以上の整数」であるはずの値。万が一、データベースに
+  // マイナスの数や文字列など、想定外の値が入っていても、必ず安全な
+  // 0以上の整数に変換してから使う(表示や並べ替えが崩れるのを防ぐ)。
+  function normalizeLikes(v){
+    const n = parseInt(v, 10);
+    return (Number.isFinite(n) && n > 0) ? n : 0;
   }
   function fetchLikeCount(id, countEl){
-    fetch(counterUrl('get', id))
-      .then(r => r.ok ? r.json() : { value: 0 })
-      .then(data => {
-        countEl.textContent = data.value || 0;
+    const fb = window.__siteFirebase;
+    if(!fb || !fb.ready){ countEl.textContent = '0'; return; }
+    fb.getDoc(fb.doc(fb.db, 'works', id))
+      .then(snap => {
+        const val = snap.exists() ? normalizeLikes(snap.data().likes) : 0;
+        countEl.textContent = val;
+        countEl.closest('.work-card')?.dataset && (countEl.closest('.work-card').dataset.likes = val);
         if(typeof window.resortWorksIfPopular === 'function') window.resortWorksIfPopular();
       })
-      .catch(() => { countEl.textContent = '–'; });
+      .catch(() => { countEl.textContent = '0'; });
   }
   function incrementLikeCountOnce(id, countEl){
     if(likedOnce.has(id)) return;
-    fetch(counterUrl('hit', id))
-      .then(r => r.json())
-      .then(data => {
-        countEl.textContent = data.value;
-        likedOnce.add(id);
-        saveLikedOnce(likedOnce);
+    const fb = window.__siteFirebase;
+    if(!fb || !fb.ready) return;
+    const newVal = (parseInt(countEl.textContent, 10) || 0) + 1;
+    countEl.textContent = newVal;
+    countEl.closest('.work-card')?.dataset && (countEl.closest('.work-card').dataset.likes = newVal);
+    likedOnce.add(id);
+    saveLikedOnce(likedOnce);
+    fb.setDoc(fb.doc(fb.db, 'works', id), { likes: fb.increment(1) }, { merge:true })
+      .then(()=>{
         if(typeof window.resortWorksIfPopular === 'function') window.resortWorksIfPopular();
       })
       .catch(()=>{});
@@ -2569,6 +2779,8 @@
     card.setAttribute('aria-label', `${t0.title} (${w.sub} / ${w.year}) ${t0.ariaSuffix}`);
     card.dataset.workId = w.id;
     card.dataset.year = w.year;
+    card.dataset.sub = w.sub;
+    card.dataset.title = t0.title;
     const media = w.img
       ? `<img class="swatch-img blur-load" src="${w.img}" alt="${t0.title}" loading="lazy" decoding="async" onload="this.classList.add('loaded')">`
       : `<div class="swatch" style="position:absolute;inset:0;background:${w.color}"></div><div class="shippou-bg"></div>`;
@@ -2626,7 +2838,7 @@
     if(!fb || !fb.ready) return;
     try{
       const [worksSnap, hiddenSnap] = await Promise.all([
-        fb.getDocs(fb.query(fb.collection(fb.db, 'works'), fb.orderBy('createdAt', 'desc'))),
+        fb.getDocs(fb.query(fb.collection(fb.db, 'works'), fb.orderBy('createdAt', 'desc'), fb.limit(500))),
         fb.getDoc(fb.doc(fb.db, 'siteConfig', 'hiddenWorks')).catch(()=>null)
       ]);
       const hiddenIds = (hiddenSnap && hiddenSnap.exists() && Array.isArray(hiddenSnap.data().ids)) ? hiddenSnap.data().ids : [];
@@ -2646,6 +2858,7 @@
         works = [...dynamicWorks, ...works]; // 新しい投稿が先頭に来るように
       }
       renderWorksGrid();
+      if(typeof window.refreshWorksFilterSort === 'function') window.refreshWorksFilterSort();
     }catch(err){
       console.error('failed to load dynamic works:', err);
       if(window.isQuotaError && window.isQuotaError(err)) window.onQuotaExceeded();
@@ -2676,12 +2889,31 @@
 
   try{
     const worksSortSelect = document.getElementById('worksSort');
-    function applyWorksSort(){
-      const mode = worksSortSelect.value;
+    const worksFilterSelect = document.getElementById('worksFilter');
+
+    // 実際にある作品のカテゴリを集めて、絞り込みの選択肢を作る。
+    // (後から作品が追加された場合にも対応できるよう、呼ばれるたびに作り直す。)
+    function populateWorksFilterOptions(){
       const cards = Array.from(grid.querySelectorAll('.work-card'));
+      const subs = Array.from(new Set(cards.map(c => c.dataset.sub).filter(Boolean))).sort();
+      const currentValue = worksFilterSelect.value;
+      worksFilterSelect.innerHTML = '<option value="all">すべて</option>'
+        + subs.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+      if(subs.includes(currentValue)) worksFilterSelect.value = currentValue;
+    }
+
+    function applyWorksFilterSort(){
+      const mode = worksSortSelect.value;
+      const filterValue = worksFilterSelect.value;
+      const cards = Array.from(grid.querySelectorAll('.work-card'));
+      cards.forEach(c=>{
+        const visible = filterValue === 'all' || c.dataset.sub === filterValue;
+        c.style.display = visible ? '' : 'none';
+      });
       cards.sort((a, b)=>{
         if(mode === 'new') return parseInt(b.dataset.year, 10) - parseInt(a.dataset.year, 10);
         if(mode === 'old') return parseInt(a.dataset.year, 10) - parseInt(b.dataset.year, 10);
+        if(mode === 'title') return (a.dataset.title || '').localeCompare(b.dataset.title || '', 'ja');
         if(mode === 'popular'){
           const av = parseInt(a.querySelector('.fav-count').textContent, 10) || 0;
           const bv = parseInt(b.querySelector('.fav-count').textContent, 10) || 0;
@@ -2691,39 +2923,305 @@
       });
       cards.forEach(c => grid.appendChild(c));
     }
-    worksSortSelect.addEventListener('change', applyWorksSort);
+    // 並べ替え・絞り込みの設定を、次にページを開いた時も覚えておく。
+    const WORKS_SORT_PREF_KEY = 'works-sort-pref';
+    const WORKS_FILTER_PREF_KEY = 'works-filter-pref';
+    let worksSortFilterRestored = false;
+    function saveWorksSortPref(){
+      try{ localStorage.setItem(WORKS_SORT_PREF_KEY, worksSortSelect.value); }catch(e){}
+    }
+    function saveWorksFilterPref(){
+      try{ localStorage.setItem(WORKS_FILTER_PREF_KEY, worksFilterSelect.value); }catch(e){}
+    }
+    worksSortSelect.addEventListener('change', saveWorksSortPref);
+    worksFilterSelect.addEventListener('change', saveWorksFilterPref);
+    worksSortSelect.addEventListener('change', applyWorksFilterSort);
+    worksFilterSelect.addEventListener('change', applyWorksFilterSort);
     window.resortWorksIfPopular = function(){
-      if(worksSortSelect.value === 'popular') applyWorksSort();
+      if(worksSortSelect.value === 'popular') applyWorksFilterSort();
     };
+    // 作品一覧が(最初の描画、または後からの追加読み込みで)作り直されるたびに、
+    // 絞り込みの選択肢も更新し、現在の並び替え・絞り込み条件を再適用する。
+    window.refreshWorksFilterSort = function(){
+      populateWorksFilterOptions();
+      if(!worksSortFilterRestored){
+        worksSortFilterRestored = true;
+        try{
+          const savedSort = localStorage.getItem(WORKS_SORT_PREF_KEY);
+          const savedFilter = localStorage.getItem(WORKS_FILTER_PREF_KEY);
+          if(savedSort && Array.from(worksSortSelect.options).some(o => o.value === savedSort)){
+            worksSortSelect.value = savedSort;
+          }
+          if(savedFilter && Array.from(worksFilterSelect.options).some(o => o.value === savedFilter)){
+            worksFilterSelect.value = savedFilter;
+          }
+        }catch(e){}
+      }
+      applyWorksFilterSort();
+    };
+    window.refreshWorksFilterSort();
   }catch(err){ console.error('works sort init failed:', err); }
 
   try{
-    const pickupCard = document.getElementById('pickupCard');
-    if(pickupCard && window.worksData && window.worksData.length){
-      const pworks = window.worksData;
-      const monthIndex = new Date().getMonth() % pworks.length;
-      const pw = pworks[monthIndex];
-      const pt = currentWorkText(pw);
-      const thumb = document.getElementById('pickupThumb');
-      if(pw.img){
-        thumb.innerHTML = `<img src="${pw.img}" alt="${pt.title}" class="blur-load" onload="this.classList.add('loaded')">`;
-      }else{
-        thumb.style.background = pw.color;
+    // 「今日のピックアップ」抽選ロジック。
+    // サーバー側の処理(定期実行など)を使わずに、日付を元にした「決定的な乱数」で
+    // 選ぶことで、同じ日に訪れた人には、誰が見ても同じ「今日のピックアップ」が
+    // 表示されるようにしている(サイコロの目を、日付から毎回同じように計算する、
+    // というイメージ)。
+
+    // 一度選ばれた作品を、何日間ピックアップから遠ざけるか。
+    // (対象の作品数が、この日数に足りない場合は、無視される。)
+    const PICKUP_COOLDOWN_DAYS = 7;
+
+    function pickupHashString(str){
+      let hash = 0;
+      for(let i=0; i<str.length; i++){
+        hash = (hash * 31 + str.charCodeAt(i)) | 0;
       }
-      document.getElementById('pickupNo').textContent = 'PICK — ' + (monthIndex+1).toString().padStart(2,'0');
-      document.getElementById('pickupTitle').textContent = pt.title;
-      document.getElementById('pickupMeta').textContent = pw.sub + ' / ' + pw.year;
-      document.getElementById('pickupDesc').textContent = pt.desc;
-      const pickupCount = document.getElementById('pickupCommentCount');
-      pickupCount.setAttribute('data-disqus-identifier', pw.id);
-      pickupCount.setAttribute('data-disqus-url', location.origin + location.pathname + '#work-' + pw.id);
-      pickupCard.addEventListener('click', (e)=>{
-        e.preventDefault();
-        document.getElementById('works').scrollIntoView({ behavior:'smooth' });
-        setTimeout(()=>{ if(typeof openLightbox === 'function') openLightbox(monthIndex); }, 500);
-      });
+      return hash >>> 0;
     }
-  }catch(err){ console.error('pickup init failed:', err); }
+    // 種(シード)から、常に同じ並びの「ランダムな」数列を作る、決定的な乱数生成器。
+    function pickupMulberry32(seed){
+      return function(){
+        seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+        let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+    // 基準日(今日)から、指定した日数だけ過去の日付を "YYYY-MM-DD" の形で返す。
+    // タイムゾーンによるズレを避けるため、UTC基準で統一している。
+    function pickupDateStringFor(offsetDays){
+      const d = new Date();
+      d.setUTCDate(d.getUTCDate() - offsetDays);
+      return d.toISOString().slice(0, 10);
+    }
+    // いいね数が多いほど選ばれやすくなる「重み付き抽選」。
+    // 重みは (いいね数 + 1) にして、いいねが0件の作品にも、必ず選ばれるチャンスを残している。
+    function pickupWeightedPickOne(candidates, rng){
+      const total = candidates.reduce((s, c) => s + c.weight, 0);
+      if(total <= 0) return candidates[Math.floor(rng() * candidates.length)];
+      let r = rng() * total;
+      for(const c of candidates){
+        r -= c.weight;
+        if(r <= 0) return c;
+      }
+      return candidates[candidates.length - 1];
+    }
+    // あるカテゴリ(作品 / Share room / ファンアート)の候補一覧から、
+    // 指定した日付の時点で選ばれるべき1件のIDを決める。
+    // 「過去の日にちなら何が選ばれていたか」も、同じルール(その日自身のクールダウンも
+    // 考慮した上で)で再帰的に計算することで、いいねの多い作品が「毎日選ばれた扱いになって
+    // 逆に除外され続ける」という不自然な偏りを防いでいる。同じ日付は一度しか計算しない
+    // (メモ化)ことで、計算量が膨らみすぎないようにしている。
+    const pickupMemo = {};
+    function pickupPickForDate(items, categoryKey, dateOffset, depthRemaining){
+      const memoKey = categoryKey + ':' + pickupDateStringFor(dateOffset);
+      // 「今日」(dateOffset===0)の結果は、キャッシュを使わず必ず計算し直す。
+      // (過去の日にちの計算だけキャッシュする。こうしないと、ページの中で
+      //  一度でも「候補が空」として計算された場合、その後で本当のデータが
+      //  揃っても、二度と正しく再計算されなくなってしまうため。)
+      if(dateOffset !== 0 && pickupMemo[memoKey] !== undefined) return pickupMemo[memoKey];
+      if(!items.length){ if(dateOffset !== 0) pickupMemo[memoKey] = null; return null; }
+
+      const candidates = items.map(it => ({ id: it.id, weight: normalizeLikes(it.likes) + 1 }));
+      let pool = candidates;
+
+      if(depthRemaining > 0){
+        const recentlyPicked = new Set();
+        for(let offset = 1; offset <= PICKUP_COOLDOWN_DAYS; offset++){
+          const pickedId = pickupPickForDate(items, categoryKey, dateOffset + offset, depthRemaining - 1);
+          if(pickedId) recentlyPicked.add(pickedId);
+        }
+        const filtered = candidates.filter(c => !recentlyPicked.has(c.id));
+        if(filtered.length > 0) pool = filtered; // 候補が足りなければ、日数の制限を無視する
+      }
+
+      const rng = pickupMulberry32(pickupHashString(pickupDateStringFor(dateOffset) + ':' + categoryKey));
+      const picked = pickupWeightedPickOne(pool, rng);
+      const result = picked ? picked.id : null;
+      if(dateOffset !== 0) pickupMemo[memoKey] = result;
+      return result;
+    }
+    function pickupPickForCategory(items, categoryKey){
+      // 再帰の深さには上限を設け(十分に遡ったら、それより前はクールダウンなしで
+      // 計算する)、計算量が際限なく増えないようにしている。
+      return pickupPickForDate(items, categoryKey, 0, PICKUP_COOLDOWN_DAYS + 3);
+    }
+
+    // 「自分の作品」の候補一覧を集める。作品自体の情報は window.worksData から、
+    // いいね数・ピックアップ除外設定・サムネの焦点位置は Firestore から補う。
+    async function fetchPickupCandidatesWorks(){
+      if(typeof window.worksData === 'undefined' || !window.worksData.length) return [];
+      const fb = window.__siteFirebase;
+      const results = [];
+      await Promise.all(window.worksData.map(async (w)=>{
+        // Firebaseに接続できていない(またはこの作品の読み込みに失敗した)場合でも、
+        // コードにすでに書かれている情報(タイトル・画像など)だけで候補に含める。
+        // いいね数は0、除外設定なし、焦点は中央、として扱う。
+        let data = {};
+        if(fb && fb.ready){
+          try{
+            const snap = await fb.getDoc(fb.doc(fb.db, 'works', w.id));
+            data = snap.exists() ? snap.data() : {};
+          }catch(e){ /* 読み込みに失敗しても、既定値のまま候補として扱う */ }
+        }
+        if(data.pickupExcluded) return;
+        const t = currentWorkText(w);
+        results.push({
+          id: w.id, likes: normalizeLikes(data.likes),
+          title: t.title, img: w.img, color: w.color,
+          focusX: data.pickupFocusX != null ? data.pickupFocusX : 50,
+          focusY: data.pickupFocusY != null ? data.pickupFocusY : 50,
+          linkHref: 'index.html#works'
+        });
+      }));
+      return results;
+    }
+    // Share room / ファンアート、それぞれの候補一覧を、Firestoreの fanart コレクションから集める。
+    async function fetchPickupCandidatesFanart(category){
+      const fb = window.__siteFirebase;
+      if(!fb || !fb.ready) return [];
+      try{
+        const q = fb.query(
+          fb.collection(fb.db, 'fanart'),
+          fb.where('category', '==', category),
+          fb.where('isR18', '==', false),
+          fb.limit(60)
+        );
+        const snap = await fb.getDocs(q);
+        const results = [];
+        snap.forEach(d=>{
+          const data = d.data();
+          if(data.pickupExcluded) return;
+          // 表示できないURLの投稿は、ピックアップの候補にも含めない。
+          if(typeof window.isAllowedMediaUrl === 'function' && !window.isAllowedMediaUrl(data.imageUrl)) return;
+          results.push({
+            id: d.id, likes: normalizeLikes(data.likes),
+            title: data.name || '名無しさん', img: data.imageUrl,
+            focusX: data.pickupFocusX != null ? data.pickupFocusX : 50,
+            focusY: data.pickupFocusY != null ? data.pickupFocusY : 50,
+            linkHref: 'fanart.html'
+          });
+        });
+        return results;
+      }catch(err){
+        console.error('pickup fanart fetch failed:', err);
+        if(window.isQuotaError && window.isQuotaError(err)) window.onQuotaExceeded();
+        return [];
+      }
+    }
+    // 3つのカテゴリ(自分の作品・Share room・ファンアート)それぞれから1件ずつ、
+    // 「今日のピックアップ」を決定する。該当がなければ、その枠は null になる。
+    window.computeTodaysPickup = async function(){
+      const [worksCandidates, shareroomCandidates, fanartCandidates] = await Promise.all([
+        fetchPickupCandidatesWorks(),
+        fetchPickupCandidatesFanart('shareroom'),
+        fetchPickupCandidatesFanart('fanart')
+      ]);
+      const pickedWorkId = pickupPickForCategory(worksCandidates, 'works');
+      const pickedShareroomId = pickupPickForCategory(shareroomCandidates, 'shareroom');
+      const pickedFanartId = pickupPickForCategory(fanartCandidates, 'fanart');
+      return {
+        works: worksCandidates.find(c => c.id === pickedWorkId) || null,
+        shareroom: shareroomCandidates.find(c => c.id === pickedShareroomId) || null,
+        fanart: fanartCandidates.find(c => c.id === pickedFanartId) || null
+      };
+    };
+  }catch(err){ console.error('pickup selection logic init failed:', err); }
+
+  try{
+    const pickupCarousel = document.getElementById('pickupCarousel');
+    const pickupTrack = document.getElementById('pickupTrack');
+    const pickupDots = document.getElementById('pickupDots');
+    const pickupEmpty = document.getElementById('pickupEmpty');
+
+    async function initPickupCarousel(){
+      if(typeof window.computeTodaysPickup !== 'function') return;
+      const result = await window.computeTodaysPickup();
+      // 表示順は「自分の作品 → Share room(一般作品) → ファンアート作品」の固定順。
+      // 該当がない枠は、そのままスキップする。
+      const slides = [
+        result.works && { ...result.works, categoryLabel:'自分の作品', categoryLabelEn:'My Work' },
+        result.shareroom && { ...result.shareroom, categoryLabel:'一般作品(Share room)', categoryLabelEn:'Share room' },
+        result.fanart && { ...result.fanart, categoryLabel:'ファンアート作品', categoryLabelEn:'Fan Art' }
+      ].filter(Boolean);
+
+      if(!slides.length){
+        pickupEmpty.hidden = false;
+        pickupCarousel.hidden = true;
+        return;
+      }
+      pickupEmpty.hidden = true;
+      pickupCarousel.hidden = false;
+
+      pickupTrack.innerHTML = '';
+      pickupDots.innerHTML = '';
+      slides.forEach((slide, i)=>{
+        const a = document.createElement('a');
+        a.className = 'pickup-slide';
+        a.href = slide.linkHref;
+        const media = slide.img
+          ? `<img src="${escapeHtml(slide.img)}" alt="${escapeHtml(slide.title)}" style="object-position:${slide.focusX}% ${slide.focusY}%;" onerror="this.closest('.pickup-slide-thumb').style.background='${window.escapeJsString(slide.color || 'linear-gradient(150deg,#726B5E,#4A453B)')}'; this.remove();">`
+          : `<div style="position:absolute;inset:0;background:${slide.color || 'linear-gradient(150deg,#726B5E,#4A453B)'};"></div>`;
+        a.innerHTML = `
+          <div class="pickup-slide-thumb">${media}</div>
+          <div class="pickup-slide-overlay"></div>
+          <div class="pickup-slide-info">
+            <span class="pickup-slide-category">${slide.categoryLabel}</span>
+            <h3>${escapeHtml(slide.title)}</h3>
+          </div>`;
+        a.addEventListener('click', (e)=>{
+          e.preventDefault();
+          if(slide.linkHref === 'index.html#works'){
+            document.getElementById('works').scrollIntoView({ behavior:'smooth' });
+            const idx = (window.worksData || []).findIndex(x => x.id === slide.id);
+            setTimeout(()=>{
+              if(idx !== -1 && typeof openLightbox === 'function') openLightbox(idx);
+            }, 500);
+          }else{
+            window.location.href = slide.linkHref;
+          }
+        });
+        pickupTrack.appendChild(a);
+
+        const dot = document.createElement('button');
+        dot.type = 'button';
+        dot.className = 'pickup-dot' + (i === 0 ? ' active' : '');
+        dot.setAttribute('aria-label', (i+1) + '枚目を表示');
+        dot.addEventListener('click', ()=> goToPickupSlide(i));
+        pickupDots.appendChild(dot);
+      });
+
+      let currentSlide = 0;
+      function goToPickupSlide(i){
+        currentSlide = i;
+        pickupTrack.style.transform = `translateX(-${i * 100}%)`;
+        pickupDots.querySelectorAll('.pickup-dot').forEach((d, di)=> d.classList.toggle('active', di === i));
+      }
+      // 一定間隔で、自動的に右の作品へスライドしていく(最後まで行ったら、また最初に戻る)。
+      if(slides.length > 1){
+        setInterval(()=>{
+          goToPickupSlide((currentSlide + 1) % slides.length);
+        }, 6000);
+      }
+    }
+    if(window.__siteFirebase && window.__siteFirebase.ready !== undefined){
+      initPickupCarousel();
+    }else{
+      let pickupStarted = false;
+      const startPickupOnce = ()=>{
+        if(pickupStarted) return;
+        pickupStarted = true;
+        initPickupCarousel();
+      };
+      document.addEventListener('site-firebase-ready', startPickupOnce, { once:true });
+      // Firebaseの準備が(何らかの理由で)整わない場合に備えて、
+      // 一定時間待っても合図が来なければ、接続なしのまま進める
+      // (「自分の作品」だけは、コードに書かれた情報だけでも表示できるため)。
+      setTimeout(startPickupOnce, 3000);
+    }
+  }catch(err){ console.error('pickup carousel init failed:', err); }
 
   function refreshWorksGridLanguage(){
     const cards = grid.querySelectorAll('.work-card');
@@ -2745,26 +3243,69 @@
     const siteSearchResults = document.getElementById('siteSearchResults');
     const siteSearchEmpty = document.getElementById('siteSearchEmpty');
 
+    // 日本語で検索しても、サイト内の英語表記(カテゴリ名やページ名)に
+    // ちゃんとヒットするようにするための、簡単な対訳辞書。
+    // 「キー」が英語表記、値の配列がその日本語の言い換え。
+    const SEARCH_SYNONYMS = {
+      'illustration': ['イラスト', 'イラストレーション', '絵'],
+      'music': ['音楽', '楽曲', '曲'],
+      'photography': ['写真', 'フォト', 'フォトグラフィー'],
+      'text': ['文章', 'テキスト'],
+      'novel': ['小説', '物語'],
+      'movie': ['映像', '動画', 'ムービー', '映画'],
+      'profile': ['プロフィール', '経歴'],
+      'contact': ['連絡先', 'お問い合わせ', 'コンタクト'],
+      'faq': ['よくある質問'],
+      'fan art': ['ファンアート'],
+      'guidelines': ['ガイドライン', '利用規約'],
+      'bookmarks': ['しおり', 'ブックマーク'],
+      'qr code': ['二次元コード', 'キューアール'],
+      'home': ['ホーム', 'トップ'],
+      'works': ['作品']
+    };
+    // 英語のカテゴリ名(例:"Illustration")を、対応する日本語の言い換えを
+    // 空白区切りで並べた文字列にする。検索対象のテキストに混ぜ込んで使う。
+    function jaSynonymsFor(enWord){
+      const list = SEARCH_SYNONYMS[String(enWord || '').toLowerCase()];
+      return list ? list.join(' ') : '';
+    }
+
     function buildSiteIndex(){
       const index = [
         { section:'Home', sectionEn:'Home', anchor:'#top',
-          textJa:'手を動かし、静けさを、かたちに。季節がひとつ過ぎるあいだに、ひとつ何かをつくる。急がずに、けれど手を止めずに。',
-          textEn:'Making things by hand, giving shape to quiet. One thing made, each time a season passes. Unhurried, yet never still.' },
+          textJa:'手を動かし、静けさを、かたちに。季節がひとつ過ぎるあいだに、ひとつ何かをつくる。急がずに、けれど手を止めずに。 ホーム トップ',
+          textEn:'Making things by hand, giving shape to quiet. One thing made, each time a season passes. Unhurried, yet never still. Home' },
         { section:'プロフィール', sectionEn:'Profile', anchor:'#profile',
-          textJa:'鴛照昧琉 おしてまいる 会社員として働くかたわら、休日に絵と文章をつくっています。大きなものより、手のひらに収まる小さな発見を集めることが好きです。紙と鉛筆から始まり、いまはデジタルと工芸のあいだを行き来しながら制作しています。私家版の作品集です。',
-          textEn:'Oshitemairu. Works as an office employee, makes illustrations and writing on days off. Drawn to small discoveries. Started with paper and pencil, now moves between digital work and craft.' },
-        { section:'FAQ', sectionEn:'FAQ', anchor:'faq.html', external:true,
-          textJa:'ご依頼について よくある質問 ご依頼の流れ 金額の目安 5000円 20000円 納期 2〜4週間 ヒアリング ラフ提出 修正 納品',
-          textEn:'FAQ commission process price range 2 to 4 weeks rough sketch revisions delivery' },
+          textJa:'鴛照昧琉 おしてまいる 会社員として働くかたわら、休日に絵と文章をつくっています。大きなものより、手のひらに収まる小さな発見を集めることが好きです。紙と鉛筆から始まり、いまはデジタルと工芸のあいだを行き来しながら制作しています。私家版の作品集です。 プロフィール 経歴',
+          textEn:'Oshitemairu. Works as an office employee, makes illustrations and writing on days off. Drawn to small discoveries. Started with paper and pencil, now moves between digital work and craft. Profile' },
+        { section:'作品', sectionEn:'Works', anchor:'#works',
+          textJa:'作品 イラスト 音楽 楽曲 小説 一覧',
+          textEn:'Works Illustration Music gallery' },
         { section:'お問い合わせ', sectionEn:'Contact', anchor:'#contact',
-          textJa:'お問い合わせ お仕事のご相談 展示のご案内 メールを送る oshitemail55@gmail.com',
-          textEn:'Contact work inquiries exhibitions send an email' }
+          textJa:'お問い合わせ お仕事のご相談 展示のご案内 メールを送る oshitemail55@gmail.com 連絡先',
+          textEn:'Contact work inquiries exhibitions send an email' },
+
+        { section:'ファンアート', sectionEn:'Fan Art', anchor:'fanart.html', external:true,
+          textJa:'ファンアート みなさんが描いてくださった作品を紹介するページ 投稿',
+          textEn:'Fan Art submissions from visitors' },
+        { section:'FAQ', sectionEn:'FAQ', anchor:'faq.html', external:true,
+          textJa:'FAQ よくある質問 ガイドライン 著作権 利用規約 二次創作について ご依頼について ご依頼の流れ 金額の目安 5000円 20000円 納期 2〜4週間 ヒアリング ラフ提出 修正 納品',
+          textEn:'FAQ guidelines copyright terms of use commission process price range 2 to 4 weeks rough sketch revisions delivery' },
+        { section:'Music', sectionEn:'Music', anchor:'music.html', external:true,
+          textJa:'音楽 楽曲 作曲した曲を紹介するページ',
+          textEn:'Music original tracks I have composed' },
+        { section:'Novel', sectionEn:'Novel', anchor:'novel.html', external:true,
+          textJa:'小説 掌編 書いた物語を紹介するページ',
+          textEn:'Novel short stories and pieces of writing' },
+        { section:'Movie', sectionEn:'Movie', anchor:'movie.html', external:true,
+          textJa:'映像 動画 制作した映像作品を紹介するページ',
+          textEn:'Movie video works I have created' }
       ];
       if(typeof window.worksData !== 'undefined'){
-        window.worksData.forEach((w, i)=>{
+        window.worksData.forEach((w)=>{
           index.push({
-            section:'作品', sectionEn:'Works', anchor:'#works', workIndex:i,
-            textJa:`${w.title} ${w.sub} ${w.year} ${w.desc}`,
+            section:'作品', sectionEn:'Works', anchor:'#works', workId:w.id,
+            textJa:`${w.title} ${w.sub} ${jaSynonymsFor(w.sub)} ${w.year} ${w.desc}`,
             textEn:`${w.titleEn} ${w.sub} ${w.year} ${w.descEn}`
           });
         });
@@ -2778,16 +3319,47 @@
       return text.length > 34 ? text.slice(0, 34) + '…' : text;
     }
 
+    // クエリが辞書に載っている語(英語・日本語どちらでも)と一致・部分一致したら、
+    // その言い換え(対訳)もすべて検索候補に加える。例えば「イラスト」と検索したら
+    // 「illustration」も一緒に調べる、という双方向の変換をここで行う。
+    function expandQuery(q){
+      const variants = new Set([q]);
+      Object.keys(SEARCH_SYNONYMS).forEach(enWord=>{
+        const jaWords = SEARCH_SYNONYMS[enWord];
+        const allWords = [enWord, ...jaWords];
+        const matched = allWords.some(w => w.toLowerCase() === q || q.includes(w.toLowerCase()) || w.toLowerCase().includes(q));
+        if(matched){
+          allWords.forEach(w => variants.add(w.toLowerCase()));
+        }
+      });
+      return Array.from(variants);
+    }
+
+    // 「いかにもコードのような文字列」での検索は、結果を出さずに弾く
+    // (表示側はescapeHtmlで無害化済みだが、そもそも検索自体させない追加の防御層)。
+    const SEARCH_CODE_LIKE_PATTERN = /<\s{0,10}(script|iframe|object|embed|svg|img|style|link|meta|form|body|a)\b|javascript\s{0,10}:|data\s{0,10}:\s{0,10}text\/html|on[a-zA-Z]{1,20}\s{0,10}=|document\s{0,10}\.\s{0,10}\w|window\s{0,10}\.\s{0,10}\w|eval\s{0,10}\(|<%|%>|\$\{/i;
+    const CODE_LIKE_MAX_LENGTH_SEARCH = 2000;
+    function searchContainsCodeLikeContent(text){
+      if(typeof text !== 'string') return false;
+      if(text.length > CODE_LIKE_MAX_LENGTH_SEARCH) return true;
+      const normalized = text.normalize('NFKC');
+      const stripped = normalized.replace(/[\s\u200B-\u200D\uFEFF]/g, '');
+      return SEARCH_CODE_LIKE_PATTERN.test(normalized) || SEARCH_CODE_LIKE_PATTERN.test(stripped);
+    }
     function renderResults(query){
+      query = query.slice(0, 20); // 念のため、こちらでも文字数を20字までに制限する
       siteSearchResults.innerHTML = '';
-      if(query === ''){
+      if(query === '' || searchContainsCodeLikeContent(query)){
         siteSearchEmpty.hidden = true;
         return;
       }
       const q = query.toLowerCase();
+      const queryVariants = expandQuery(q);
       const scored = siteIndex.map(entry=>{
         const haystack = (entry.textJa + ' ' + entry.textEn).toLowerCase();
-        return { entry, score: fuzzyScore(q, haystack) };
+        // 複数の言い換え候補それぞれで採点し、一番良かったスコアを採用する。
+        const bestScore = Math.max(...queryVariants.map(v => fuzzyScore(v, haystack)));
+        return { entry, score: bestScore };
       }).filter(x => x.score > 0);
       scored.sort((a,b)=> b.score - a.score);
       const matches = scored.slice(0, 8).map(x => x.entry);
@@ -2797,7 +3369,7 @@
         const li = document.createElement('li');
         const a = document.createElement('a');
         a.href = entry.anchor;
-        a.innerHTML = `<span class="site-search-result-section">${isEnglish() ? entry.sectionEn : entry.section}</span><span class="site-search-result-snippet">${snippetFor(entry)}</span>`;
+        a.innerHTML = `<span class="site-search-result-section">${escapeHtml(isEnglish() ? entry.sectionEn : entry.section)}</span><span class="site-search-result-snippet">${escapeHtml(snippetFor(entry))}</span>`;
         a.addEventListener('click', (e)=>{
           e.preventDefault();
           searchPanelCtl.close();
@@ -2806,8 +3378,9 @@
             return;
           }
           document.querySelector(entry.anchor).scrollIntoView({ behavior:'smooth' });
-          if(typeof entry.workIndex === 'number'){
-            setTimeout(()=> openLightbox(entry.workIndex), 500);
+          if(entry.workId){
+            const idx = (window.worksData || works).findIndex(x => x.id === entry.workId);
+            if(idx !== -1) setTimeout(()=> openLightbox(idx), 500);
           }
         });
         li.appendChild(a);
@@ -2837,6 +3410,27 @@
   }catch(err){ console.error('settings panel init failed:', err); }
 
   try{
+    // ファンアート由来の画像URLを表示する直前に必ず通す、簡易版の安全確認。
+    // (自分の作品は、admin.html経由の信頼できるデータなので対象外。)
+    const ALLOWED_MEDIA_HOSTS = [
+      'twitter.com', 'x.com', 'pbs.twimg.com', 'video.twimg.com',
+      'youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be', 'img.youtube.com',
+      'pixiv.net', 'www.pixiv.net', 'i.pximg.net'
+    ];
+    const BLOCKED_URL_EXTENSIONS = /\.(svg|html?|xhtml|js|mjs|php|exe|scr|bat|cmd|jar|apk|dmg|msi|sh|ps1)(\?.*)?$/i;
+    const MAX_MEDIA_URL_LENGTH = 200;
+    window.isAllowedMediaUrl = function(rawUrl){
+      if(typeof rawUrl !== 'string' || rawUrl.length > MAX_MEDIA_URL_LENGTH) return false;
+      let u;
+      try{ u = new URL(rawUrl); }catch(e){ return false; }
+      if(u.protocol !== 'https:') return false;
+      const host = u.hostname.toLowerCase();
+      const hostOk = ALLOWED_MEDIA_HOSTS.some(allowed => host === allowed || host.endsWith('.' + allowed));
+      if(!hostOk) return false;
+      if(BLOCKED_URL_EXTENSIONS.test(u.pathname)) return false;
+      return true;
+    };
+
     const REWATCH_KEY = 'portfolio-rewatch-history';
     const REWATCH_MAX = 12;
     function getRewatchHistory(){
@@ -2872,9 +3466,12 @@
         const item = document.createElement('div');
         item.className = 'rewatch-item';
         const fallbackColor = entry.color || 'linear-gradient(150deg,#726B5E,#4A453B)';
-        const media = entry.img
-          ? `<img src="${entry.img}" alt="${title}" style="width:100%;height:100%;object-fit:cover;" onerror="this.outerHTML='<div style=&quot;position:absolute;inset:0;background:${fallbackColor}&quot;></div>'">`
-          : `<div style="position:absolute;inset:0;background:${fallbackColor}"></div>`;
+        // fanart由来の画像だけ、表示の直前にもう一度URLの安全確認をする
+        // (自分の作品は、admin.html経由の信頼できるデータなので対象外)。
+        const imgIsSafe = entry.img && (entry.type !== 'fanart' || window.isAllowedMediaUrl(entry.img));
+        const media = imgIsSafe
+          ? `<img src="${escapeHtml(entry.img)}" alt="${escapeHtml(title)}" style="width:100%;height:100%;object-fit:cover;" loading="lazy" decoding="async" onerror="this.outerHTML='<div style=&quot;position:absolute;inset:0;background:${window.escapeJsString(fallbackColor)}&quot;></div>'">`
+          : `<div style="position:absolute;inset:0;background:${escapeHtml(fallbackColor)}"></div>`;
         item.innerHTML = `<div class="rewatch-thumb">${media}</div><p>${escapeHtml(title)}</p>`;
         item.addEventListener('click', ()=>{
           rewatchCtl.close();
@@ -2892,8 +3489,80 @@
       });
     }
     const rewatchCtl = bindSheetModal(rewatchBackdrop, rewatchSheet, 400, renderRewatchList);
-    navRewatch.addEventListener('click', (e)=>{ e.preventDefault(); rewatchCtl.open(); });
+    navRewatch.addEventListener('click', (e)=>{
+      e.preventDefault();
+      rewatchSheet.style.maxHeight = '';
+      rewatchSheet.style.height = '';
+      rewatchCtl.open();
+    });
     document.getElementById('rewatchClose').addEventListener('click', rewatchCtl.close);
+
+    // ハンドル部分(上部のつまみ)を指・マウスでドラッグして、シートの高さを
+    // 上下に自由に調整できるようにする。上に引っ張れば大きく、下に引っ張れば
+    // 小さくなり、さらに大きく下へ引っ張ると、そのまま閉じる。
+    (function(){
+      const handle = rewatchSheet.querySelector('.bottom-sheet-handle');
+      const head = rewatchSheet.querySelector('.bottom-sheet-head');
+      if(!handle) return;
+      const MIN_HEIGHT_VH = 40;
+      const MAX_HEIGHT_VH = 92;
+      const DEFAULT_HEIGHT_VH = 70;
+      const CLOSE_THRESHOLD_VH = 22; // これ以上下に引っ張ったら閉じる
+      let startY = 0;
+      let currentY = 0;
+      let baseHeightVh = DEFAULT_HEIGHT_VH;
+      let dragging = false;
+      function currentHeightVh(){
+        const rect = rewatchSheet.getBoundingClientRect();
+        return (rect.height / window.innerHeight) * 100;
+      }
+      function onStart(clientY){
+        dragging = true;
+        startY = clientY;
+        currentY = clientY;
+        baseHeightVh = currentHeightVh();
+        rewatchSheet.style.transition = 'none';
+      }
+      function onMove(clientY){
+        if(!dragging) return;
+        currentY = clientY;
+        const deltaVh = ((startY - currentY) / window.innerHeight) * 100; // 上へ引っ張ると正の値
+        const newHeightVh = Math.max(MIN_HEIGHT_VH, Math.min(MAX_HEIGHT_VH, baseHeightVh + deltaVh));
+        rewatchSheet.style.maxHeight = newHeightVh + 'vh';
+        rewatchSheet.style.height = newHeightVh + 'vh';
+      }
+      function onEnd(){
+        if(!dragging) return;
+        dragging = false;
+        rewatchSheet.style.transition = '';
+        const deltaVh = ((startY - currentY) / window.innerHeight) * 100;
+        if(deltaVh < -CLOSE_THRESHOLD_VH){
+          rewatchCtl.close();
+        }
+      }
+      handle.addEventListener('touchstart', (e)=> onStart(e.touches[0].clientY), { passive:true });
+      handle.addEventListener('touchmove', (e)=> onMove(e.touches[0].clientY), { passive:true });
+      handle.addEventListener('touchend', onEnd);
+      handle.addEventListener('mousedown', (e)=>{ onStart(e.clientY); e.preventDefault(); });
+      // 上辺(タイトル部分)からも、同じようにドラッグで動かせるようにする。
+      // ただし、閉じるボタンの上から始めた場合は、ドラッグとして扱わない
+      // (ボタンのクリックが、正しく機能しなくなるのを防ぐため)。
+      if(head){
+        head.addEventListener('touchstart', (e)=>{
+          if(e.target.closest('#rewatchClose')) return;
+          onStart(e.touches[0].clientY);
+        }, { passive:true });
+        head.addEventListener('touchmove', (e)=> onMove(e.touches[0].clientY), { passive:true });
+        head.addEventListener('touchend', onEnd);
+        head.addEventListener('mousedown', (e)=>{
+          if(e.target.closest('#rewatchClose')) return;
+          onStart(e.clientY);
+          e.preventDefault();
+        });
+      }
+      document.addEventListener('mousemove', (e)=>{ if(dragging) onMove(e.clientY); });
+      document.addEventListener('mouseup', onEnd);
+    })();
 
     // --- 実績一覧の表示 ---
     const achLoginNote = document.getElementById('achievementsLoginNote');
@@ -2957,10 +3626,23 @@
     const qrBackdrop = document.getElementById('qrBackdrop');
     const qrModal = document.getElementById('qrModal');
     const navQr = document.getElementById('navQr');
+    // 前景を墨色、背景を生成り色にすることで、和の色味を保ちつつ、
+    // 通常の白黒QRコードと同じくらいの高いコントラストを確保している(読み取りやすさ優先)。
+    // 色そのものはテーマ(ライト/ダーク)に関わらず、常にこの2色で固定。
+    function qrImageUrl(url){
+      return 'https://api.qrserver.com/v1/create-qr-code/?size=192x192'
+        + '&color=221F1B&bgcolor=F6F1E6'
+        + '&data=' + encodeURIComponent(url);
+    }
+    const qrUrl = location.origin + location.pathname;
+    // モーダルを開く前に、あらかじめ画像を読み込んでおく(プリロード)。
+    // こうしておくと、実際にモーダルを開いた瞬間には既に読み込みが
+    // 終わっているため、体感の表示速度が大きく速くなる。
+    const qrPreload = new Image();
+    qrPreload.src = qrImageUrl(qrUrl);
     function fillQrContent(){
-      const url = location.origin + location.pathname;
-      document.getElementById('qrImage').src = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(url);
-      document.getElementById('qrUrlText').textContent = url;
+      document.getElementById('qrImage').src = qrImageUrl(qrUrl);
+      document.getElementById('qrUrlText').textContent = qrUrl;
     }
     const qrCtl = bindSheetModal(qrBackdrop, qrModal, 300, fillQrContent);
     navQr.addEventListener('click', (e)=>{ e.preventDefault(); qrCtl.open(); });
@@ -2968,32 +3650,76 @@
   }catch(err){ console.error('qr code init failed:', err); }
 
   try{
+    // Musicページで公開している曲と同じ内容。曲を増やす時は、Musicページの
+    // 曲一覧に追加するのに合わせて、ここにも同じ形で1行追加してください。
+    const BGM_TRACKS = [
+      { title:'灯りをともす', src:'' },
+      { title:'庭の記録', src:'' }
+    ];
+
     const bgmToggle = document.getElementById('bgmToggle');
+    const bgmPrevBtn = document.getElementById('bgmPrevBtn');
+    const bgmNextBtn = document.getElementById('bgmNextBtn');
     const bgmAudio = document.getElementById('bgmAudio');
+    const bgmTrackName = document.getElementById('bgmTrackName');
     const playIcon = bgmToggle.querySelector('.bgm-icon-play');
     const pauseIcon = bgmToggle.querySelector('.bgm-icon-pause');
     let bgmClickCount = 0;
+    let bgmIndex = 0;
+    let bgmLoaded = false;
+
+    function setPlayingUi(playing){
+      bgmToggle.setAttribute('aria-pressed', String(playing));
+      bgmToggle.setAttribute('aria-label', playing ? 'BGMを停止' : 'BGMを再生');
+      playIcon.hidden = playing;
+      pauseIcon.hidden = !playing;
+    }
+
+    // 指定した番号の曲を読み込む。keepPlayingがtrueなら、読み込み後すぐに再生を始める
+    // (「次の曲」「前の曲」ボタンを、再生中に押した時に、途切れず続けて聴けるようにするため)。
+    function loadBgmTrack(index, keepPlaying){
+      const total = BGM_TRACKS.length;
+      bgmIndex = ((index % total) + total) % total; // 最初/最後を超えたら、反対側に循環する
+      const track = BGM_TRACKS[bgmIndex];
+      bgmAudio.src = track.src || '';
+      bgmTrackName.textContent = track.title || '';
+      bgmLoaded = true;
+      if(keepPlaying && track.src){
+        bgmAudio.play().catch(()=>{});
+      }
+    }
+
     bgmToggle.addEventListener('click', ()=>{
       bgmClickCount++;
       if(bgmClickCount >= 10 && typeof AchievementModule !== 'undefined' && AchievementModule.isLoggedIn()){
         AchievementModule.unlock('bgm-mania');
       }
+      if(!bgmLoaded) loadBgmTrack(0, false);
       if(bgmAudio.paused){
         bgmAudio.play().catch(()=>{
           console.warn('BGM再生に失敗しました。音声ファイルが未設定の可能性があります。');
         });
-        bgmToggle.setAttribute('aria-pressed', 'true');
-        bgmToggle.setAttribute('aria-label', 'BGMを停止');
-        playIcon.hidden = true;
-        pauseIcon.hidden = false;
+        setPlayingUi(true);
       }else{
         bgmAudio.pause();
-        bgmToggle.setAttribute('aria-pressed', 'false');
-        bgmToggle.setAttribute('aria-label', 'BGMを再生');
-        playIcon.hidden = false;
-        pauseIcon.hidden = true;
+        setPlayingUi(false);
       }
     });
+
+    bgmPrevBtn.addEventListener('click', ()=>{
+      if(!bgmLoaded) loadBgmTrack(0, false);
+      loadBgmTrack(bgmIndex - 1, !bgmAudio.paused);
+    });
+    bgmNextBtn.addEventListener('click', ()=>{
+      if(!bgmLoaded) loadBgmTrack(0, false);
+      loadBgmTrack(bgmIndex + 1, !bgmAudio.paused);
+    });
+    // 1曲が終わったら、自動的に次の曲へ進む(最後の曲の場合は、最初の曲に戻る)。
+    bgmAudio.addEventListener('ended', ()=>{
+      loadBgmTrack(bgmIndex + 1, true);
+    });
+    bgmAudio.addEventListener('play', ()=> setPlayingUi(true));
+    bgmAudio.addEventListener('pause', ()=> setPlayingUi(false));
   }catch(err){ console.error('bgm toggle init failed:', err); }
 
   if(profileImage){
@@ -3059,7 +3785,42 @@
     if(typeof resetIllustrationZoom === 'function') resetIllustrationZoom();
     if(typeof exitIllustrationFullscreen === 'function') exitIllustrationFullscreen();
     renderCommentsFor(w, t.title);
+    renderRelatedWorks(w);
     if(typeof recordRewatch === 'function') recordRewatch({ id: w.id, type:'work', title: w.title, titleEn: w.titleEn, color: w.color, img: w.img });
+  }
+  // 今見ている作品の下に、関連する作品をさりげなく表示する(pixivのイメージ)。
+  // 同じジャンルの作品を優先し、足りなければ他の作品で補う。
+  function renderRelatedWorks(currentWork){
+    const relatedSection = document.getElementById('lbRelated');
+    const relatedGrid = document.getElementById('lbRelatedGrid');
+    if(!relatedSection || !relatedGrid || !window.worksData) return;
+    const sameCategory = window.worksData.filter(w => w.id !== currentWork.id && w.sub === currentWork.sub);
+    let candidates = sameCategory;
+    if(candidates.length < 3){
+      const others = window.worksData.filter(w => w.id !== currentWork.id && w.sub !== currentWork.sub);
+      candidates = candidates.concat(others);
+    }
+    if(candidates.length === 0){
+      relatedSection.hidden = true;
+      return;
+    }
+    const shuffled = candidates.slice().sort(()=> Math.random() - 0.5);
+    const picks = shuffled.slice(0, 3);
+    relatedGrid.innerHTML = picks.map(w=>{
+      const idx = window.worksData.indexOf(w);
+      const title = isEnglish() ? (w.titleEn || w.title) : w.title;
+      return `<div class="lb-related-item" data-idx="${idx}">
+        <img src="${escapeHtml(w.img || '')}" alt="${escapeHtml(title)}" loading="lazy" decoding="async" onerror="this.style.display='none'">
+        <span class="lb-related-item-title">${escapeHtml(title)}</span>
+      </div>`;
+    }).join('');
+    relatedGrid.querySelectorAll('.lb-related-item').forEach(el=>{
+      el.addEventListener('click', ()=>{
+        const idx = parseInt(el.dataset.idx, 10);
+        openLightbox(idx);
+      });
+    });
+    relatedSection.hidden = false;
   }
   function openLightbox(i){
     renderLightboxContent(i);
@@ -3181,10 +3942,16 @@
 
   (function(){
     const lbInner = document.querySelector('.lb-inner');
-    let startX = 0, startY = 0, tracking = false;
+    let startX = 0, startY = 0, tracking = false, startedOnZoomedImage = false;
     lbInner.addEventListener('touchstart', (e)=>{
       if(e.touches.length !== 1){ tracking = false; return; }
-      if(typeof isIllustrationZoomed === 'function' && isIllustrationZoomed()){ tracking = false; return; }
+      // 「拡大中は常にスワイプでの切り替えを禁止する」のではなく、
+      // 「拡大されたイラストの“上”から指を動かし始めた時だけ」禁止する。
+      // イラストの外側(説明文などの領域)からなら、拡大中でも
+      // 横スワイプでほかの作品に移動できるようにするため。
+      const startedOnImage = !!e.target.closest('.lb-img');
+      startedOnZoomedImage = startedOnImage && typeof isIllustrationZoomed === 'function' && isIllustrationZoomed();
+      if(startedOnZoomedImage){ tracking = false; return; }
       startX = e.touches[0].clientX;
       startY = e.touches[0].clientY;
       tracking = true;
@@ -3192,7 +3959,7 @@
     lbInner.addEventListener('touchend', (e)=>{
       if(!tracking) return;
       tracking = false;
-      if(typeof isIllustrationZoomed === 'function' && isIllustrationZoomed()) return;
+      if(startedOnZoomedImage) return;
       const t = e.changedTouches[0];
       const dx = t.clientX - startX;
       const dy = t.clientY - startY;
@@ -3373,6 +4140,18 @@
   try{
   (function(){
     const MAIL_TO = 'oshitemail55@gmail.com';
+    // 「いかにもコードのような文字列」を検知するための、簡易的なパターン一覧。
+    // これだけで完璧に見抜けるわけではないが(表示側は別途escapeHtmlで無害化済み)、
+    // そもそも、そういった内容の送信自体を入り口で断る、追加の防御層として使う。
+    const CODE_LIKE_PATTERN = /<\s{0,10}(script|iframe|object|embed|svg|img|style|link|meta|form|body|a)\b|javascript\s{0,10}:|data\s{0,10}:\s{0,10}text\/html|on[a-zA-Z]{1,20}\s{0,10}=|document\s{0,10}\.\s{0,10}\w|window\s{0,10}\.\s{0,10}\w|eval\s{0,10}\(|<%|%>|\$\{/i;
+    const CODE_LIKE_MAX_LENGTH = 2000;
+    function containsCodeLikeContent(text){
+      if(typeof text !== 'string') return false;
+      if(text.length > CODE_LIKE_MAX_LENGTH) return true;
+      const normalized = text.normalize('NFKC');
+      const stripped = normalized.replace(/[\s\u200B-\u200D\uFEFF]/g, '');
+      return CODE_LIKE_PATTERN.test(normalized) || CODE_LIKE_PATTERN.test(stripped);
+    }
     const mailBtnOpen = document.getElementById('mailBtnOpen');
     const mailModal = document.getElementById('mailModal');
     const mailClose = document.getElementById('mailClose');
@@ -3382,11 +4161,51 @@
     let lastFocused = null;
     let pendingMessage = null;
 
+    // 書いている途中に、誤ってページを閉じてしまっても、内容が消えないようにする。
+    // 入力するたびに、こっそり端末内(このブラウザだけ)に保存しておき、
+    // 次にフォームを開いた時に、自動で復元する。送信が終わったら、消す。
+    const MAIL_DRAFT_KEY = 'mail-draft';
+    function saveMailDraft(){
+      try{
+        const draft = {
+          name: document.getElementById('mailName').value,
+          from: document.getElementById('mailFrom').value,
+          message: document.getElementById('mailBody').value,
+        };
+        if(!draft.name && !draft.from && !draft.message){
+          localStorage.removeItem(MAIL_DRAFT_KEY);
+        }else{
+          localStorage.setItem(MAIL_DRAFT_KEY, JSON.stringify(draft));
+        }
+      }catch(e){}
+    }
+    function restoreMailDraft(){
+      try{
+        const raw = localStorage.getItem(MAIL_DRAFT_KEY);
+        if(!raw) return;
+        const draft = JSON.parse(raw);
+        document.getElementById('mailName').value = draft.name || '';
+        document.getElementById('mailFrom').value = draft.from || '';
+        document.getElementById('mailBody').value = draft.message || '';
+        // 文字数カウンターも、復元した内容に合わせて更新する
+        ['mailName', 'mailFrom', 'mailBody'].forEach(id=>{
+          document.getElementById(id).dispatchEvent(new Event('input'));
+        });
+      }catch(e){}
+    }
+    function clearMailDraft(){
+      try{ localStorage.removeItem(MAIL_DRAFT_KEY); }catch(e){}
+    }
+    ['mailName', 'mailFrom', 'mailBody'].forEach(id=>{
+      document.getElementById(id).addEventListener('input', saveMailDraft);
+    });
+
     function openMailModal(){
       lastFocused = document.activeElement;
       showForm();
       mailModal.classList.add('open');
       document.body.style.overflow = 'hidden';
+      restoreMailDraft();
       const firstField = document.getElementById('mailName');
       if(firstField) firstField.focus();
     }
@@ -3435,11 +4254,97 @@
     });
     providerBack.addEventListener('click', showForm);
 
-    mailForm.addEventListener('submit', (e)=>{
+    // 書いている間に、文字数の上限が見えるようにする(リアルタイムのカウンター表示)。
+    // 上限を超えても入力自体は止めず、超えた場合は赤字で知らせ、送信時にブロックする。
+    const MAIL_LIMITS = { mailName:30, mailFrom:100, mailBody:350 };
+    function wireCharCounter(fieldId, countId){
+      const field = document.getElementById(fieldId);
+      const countEl = document.getElementById(countId);
+      const limit = MAIL_LIMITS[fieldId];
+      function update(){
+        const len = field.value.length;
+        countEl.textContent = len + ' / ' + limit + '字';
+        countEl.classList.toggle('over-limit', len > limit);
+      }
+      field.addEventListener('input', update);
+      update();
+    }
+    wireCharCounter('mailName', 'mailNameCount');
+    wireCharCounter('mailFrom', 'mailFromCount');
+    wireCharCounter('mailBody', 'mailBodyCount');
+
+    // メール送信の、サイト全体で共有する混雑防止(Platform投稿と同じ仕組み)。
+    // ログイン不要の機能のため、専用の別カウンター(mailRateLimit)を使う。
+    const MAIL_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+    const MAIL_RATE_LIMIT_MAX = 40;
+    const MAIL_RATE_LIMIT_BLOCK_MS = 10 * 60 * 1000;
+    async function checkMailRateLimit(){
+      const fb = window.__siteFirebase;
+      if(!fb || !fb.ready) return true; // 未接続時は、誤検知でブロックしない
+      try{
+        const rateLimitRef = fb.doc(fb.db, 'siteConfig', 'mailRateLimit');
+        let isBusy = false;
+        await fb.runTransaction(fb.db, async (tx)=>{
+          const snap = await tx.get(rateLimitRef);
+          const data = snap.exists() ? snap.data() : {};
+          const now = Date.now();
+          if(data.blockedUntil && now < data.blockedUntil){
+            isBusy = true;
+            return;
+          }
+          let windowStart = data.windowStart || now;
+          let count = data.count || 0;
+          if(now - windowStart >= MAIL_RATE_LIMIT_WINDOW_MS){
+            windowStart = now;
+            count = 0;
+          }
+          count += 1;
+          if(count >= MAIL_RATE_LIMIT_MAX){
+            tx.set(rateLimitRef, { windowStart: now, count: 0, blockedUntil: now + MAIL_RATE_LIMIT_BLOCK_MS });
+          }else{
+            tx.set(rateLimitRef, { windowStart: windowStart, count: count, blockedUntil: null });
+          }
+        });
+        return !isBusy;
+      }catch(err){
+        console.error('mail rate limit check failed:', err);
+        return true;
+      }
+    }
+
+    mailForm.addEventListener('submit', async (e)=>{
       e.preventDefault();
       const name = document.getElementById('mailName').value.trim();
       const from = document.getElementById('mailFrom').value.trim();
       const message = document.getElementById('mailBody').value.trim();
+
+      if(name.length > MAIL_LIMITS.mailName || from.length > MAIL_LIMITS.mailFrom || message.length > MAIL_LIMITS.mailBody){
+        alert('文字数の上限を超えている項目があります。各項目の文字数をご確認の上、短くしてから送信してください。');
+        return;
+      }
+
+      if(containsCodeLikeContent(name) || containsCodeLikeContent(from) || containsCodeLikeContent(message)){
+        alert('コードのような文字列は入力できません。内容をご確認の上、もう一度お試しください。');
+        return;
+      }
+
+      // 連続送信への抑止(荒らし対策)。ログイン不要の機能のため、
+      // このブラウザだけの簡易的な記録(localStorage)で、連打を防ぐ。
+      const MAIL_COOLDOWN_MS = 30000; // 30秒
+      const lastMailAt = Number(localStorage.getItem('mail-last-sent-at') || 0);
+      if(Date.now() - lastMailAt < MAIL_COOLDOWN_MS){
+        const waitSec = Math.ceil((MAIL_COOLDOWN_MS - (Date.now() - lastMailAt)) / 1000);
+        alert(`連続送信を防ぐため、少し間を空けてください。あと約${waitSec}秒でもう一度送信できます。`);
+        return;
+      }
+      localStorage.setItem('mail-last-sent-at', String(Date.now()));
+
+      // サイト全体で共有する、混雑防止の確認(荒らし・大量送信対策)。
+      const mailOkToProceed = await checkMailRateLimit();
+      if(!mailOkToProceed){
+        alert('サイトが混み合っております。しばらくお待ちください。');
+        return;
+      }
 
       // これまでのメール送信に加えて、サイト上の管理画面でも確認できるよう、Firebaseにも保存しておく。
       // 保存に失敗しても、これまで通りメール送信自体は続けられるようにする。
@@ -3459,6 +4364,11 @@
       const body = message;
 
       pendingMessage = { subject, body };
+      clearMailDraft();
+      mailForm.reset();
+      ['mailName', 'mailFrom', 'mailBody'].forEach(id=>{
+        document.getElementById(id).dispatchEvent(new Event('input'));
+      });
       const preview = document.getElementById('mailCopyPreview');
       const toLabel = siteLang === 'en' ? 'To: ' : '宛先: ';
       const subjectLabel = siteLang === 'en' ? 'Subject: ' : '件名: ';
@@ -4220,6 +5130,26 @@
   }catch(err){ console.error('illustration zoom init failed:', err); }
 
   try{
+    // 「いかにもコードのような文字列」を検知するための、簡易的なパターン一覧。
+    // ニックネームなど、自由記述のテキスト入力に対して使う
+    // (表示側はtextContentで安全に扱われているが、入り口でも弾く追加の防御層)。
+    const CODE_LIKE_PATTERN = /<\s{0,10}(script|iframe|object|embed|svg|img|style|link|meta|form|body|a)\b|javascript\s{0,10}:|data\s{0,10}:\s{0,10}text\/html|on[a-zA-Z]{1,20}\s{0,10}=|document\s{0,10}\.\s{0,10}\w|window\s{0,10}\.\s{0,10}\w|eval\s{0,10}\(|<%|%>|\$\{/i;
+    const CODE_LIKE_MAX_LENGTH = 2000;
+    window.containsCodeLikeContent = function(text){
+      if(typeof text !== 'string') return false;
+      if(text.length > CODE_LIKE_MAX_LENGTH) return true;
+      const normalized = text.normalize('NFKC');
+      const stripped = normalized.replace(/[\s\u200B-\u200D\uFEFF]/g, '');
+      return CODE_LIKE_PATTERN.test(normalized) || CODE_LIKE_PATTERN.test(stripped);
+    };
+    // ゼロ幅文字・双方向制御文字など、画面には見えないのに文字列としては
+    // 存在する、いわゆる「見えない文字」を取り除く。これらを名前に混ぜることで、
+    // 「見た目はそっくりだが、実は別の人」というなりすましに使われることがある。
+    window.stripInvisibleChars = function(text){
+      if(typeof text !== 'string') return text;
+      return text.replace(/[\u200B-\u200D\uFEFF\u202A-\u202E\u2066-\u2069\u0000-\u001F\u007F]/g, '');
+    };
+
     const loginBtn = document.getElementById('loginBtn');
     const logoutBtn = document.getElementById('logoutBtn');
     const loginAccount = document.getElementById('loginAccount');
@@ -4290,7 +5220,11 @@
     async function saveNickname(){
       const fb = window.__siteFirebase;
       if(!fb || !fb.ready || !fb.auth.currentUser) return;
-      const value = nicknameInput.value.trim().slice(0, 20);
+      const value = (typeof window.stripInvisibleChars === 'function' ? window.stripInvisibleChars(nicknameInput.value.trim()) : nicknameInput.value.trim()).slice(0, 20);
+      if(value && typeof window.containsCodeLikeContent === 'function' && window.containsCodeLikeContent(value)){
+        alert('ニックネームに、コードのような文字列は使用できません。');
+        return;
+      }
       try{
         await fb.setDoc(fb.doc(fb.db, 'users', fb.auth.currentUser.uid), { nickname: value || null }, { merge:true });
         currentNickname = value || null;
@@ -4393,7 +5327,7 @@
           return;
         }
         try{
-          const snap = await fb.getDocs(fb.collection(fb.db, 'presence'));
+          const snap = await fb.getDocs(fb.query(fb.collection(fb.db, 'presence'), fb.limit(200))); // 1回の読み込みで取得する上限を設け、際限なく増える読み込みを防ぐ
           const now = Date.now();
           let activeOthers = 0;
           snap.forEach(d=>{

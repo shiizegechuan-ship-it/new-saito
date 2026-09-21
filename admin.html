@@ -31,9 +31,17 @@
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;600&family=Zen+Kaku+Gothic+New:wght@400&display=swap" onload="this.onload=null;this.rel='stylesheet'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;600&family=Zen+Kaku+Gothic+New:wght@400&display=swap" rel="stylesheet"></noscript>
 <!-- Firebase(お問い合わせ一覧の表示に使用) -->
+<!-- SRI(改ざん防止)対応の準備。本番運用を開始する前に、正しいハッシュ値を
+     計算し、下の3つのmodulepreloadタグに integrity="sha384-..." を追加してください
+     (手順は firebase-sri-setup.md をご覧ください)。ハッシュ値を入れるまでは、
+     modulepreloadだけが効いた状態(読み込みの高速化のみ)になります。 -->
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js" crossorigin="anonymous">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js" crossorigin="anonymous">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js" crossorigin="anonymous">
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, deleteDoc, setDoc, addDoc, orderBy, where, query } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, deleteDoc, setDoc, addDoc, orderBy, where, query, limit } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getAuth, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
   // 他のページと、同じ設定値を入力してください。
   const firebaseConfig = {
@@ -49,7 +57,12 @@
   try{
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
-    window.__adminFirebase = { db, collection, getDocs, doc, getDoc, updateDoc, deleteDoc, setDoc, addDoc, orderBy, where, query, ready:true };
+    const auth = getAuth(app);
+    window.__adminFirebase = {
+      db, collection, getDocs, doc, getDoc, updateDoc, deleteDoc, setDoc, addDoc, orderBy, where, query, limit,
+      auth, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged,
+      ready:true
+    };
   }catch(err){
     console.error('Firebase init failed:', err);
     window.__adminFirebase = { ready:false };
@@ -61,6 +74,19 @@
   *{ box-sizing:border-box; }
   
   html, body{ touch-action:pan-x pan-y; }
+  
+  .network-status-banner{
+    position:fixed; top:0; left:0; right:0; z-index:9999;
+    padding:9px 16px; text-align:center; font-family:var(--f-gothic);
+    font-size:calc(12.5px * var(--font-scale, 1)); letter-spacing:.04em;
+    color:#fff; transform:translateY(-100%); transition:transform .3s ease;
+  }
+  
+  .network-status-banner.show{ transform:translateY(0); }
+  
+  .network-status-banner.offline{ background:var(--bengara); }
+  
+  .network-status-banner.online{ background:#3E6B4F; }
   
   html{
     scroll-behavior:smooth;
@@ -92,6 +118,13 @@
     display:flex; align-items:center; justify-content:space-between;
     padding:calc(22px + env(safe-area-inset-top)) 6vw 22px;
     transition:background-color .5s ease, padding .4s ease, box-shadow .4s ease;
+    /* Safariはアドレスバーが縮む瞬間、position:fixed要素の
+       位置の再計算が一瞬遅れることがあり、その間メニューバーの下側が
+       欠けて見えることがある。独立した合成レイヤーとして扱わせることで、
+       この遅れを防ぐ、Safariで広く知られている対策。 */
+    -webkit-transform:translateZ(0);
+    transform:translateZ(0);
+    will-change:transform;
   }
   
   header.scrolled{
@@ -144,6 +177,7 @@
   
   .settings-row{
     display:flex; align-items:center; justify-content:space-between; gap:14px;
+    flex-wrap:wrap; row-gap:10px;
   }
   
   .settings-row + .settings-row{ margin-top:18px; }
@@ -237,9 +271,12 @@
   }
   
   .qr-modal img{
-    display:block; margin:0 auto; border-radius:4px;
+    display:block; margin:0 auto; border-radius:6px;
     width:220px; height:220px; object-fit:contain;
-    background:var(--kinari-2); font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi);
+    background:linear-gradient(135deg, var(--ai) 0%, var(--bengara) 100%);
+    padding:14px;
+    box-sizing:border-box;
+    font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi);
   }
   
   .qr-modal-url{
@@ -540,6 +577,25 @@
     width:32px; height:32px; transition:border-color .3s ease, background .3s ease;
   }
   
+  .bgm-controls{ display:flex; align-items:center; gap:6px; }
+  
+  .bgm-nav-btn{
+    width:24px; height:24px; border-radius:50%; border:1px solid var(--line); background:transparent;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; flex:none;
+    transition:border-color .3s ease;
+  }
+  
+  .bgm-nav-btn:hover{ border-color:var(--bengara); }
+  
+  .bgm-nav-btn svg{ width:11px; height:11px; color:var(--sumi); }
+  
+  .bgm-track-name{
+    text-align:right; font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi);
+    margin-top:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  
+  .bgm-track-name:empty{ display:none; }
+  
   .bottom-sheet-close{ width:32px; height:32px; flex:none; }
   
 
@@ -579,6 +635,14 @@
   }
   
   .admin-gate-field{ display:block; margin-bottom:16px; }
+  
+  .admin-gate-intro{
+    font-size:calc(13px * var(--font-scale, 1)); color:var(--sumi); line-height:1.9; margin-bottom:16px;
+  }
+  
+  .admin-gate-note{
+    margin-top:14px; font-size:calc(12.5px * var(--font-scale, 1)); color:var(--usuzumi); line-height:1.8;
+  }
   
   .admin-gate-field span{ display:block; font-size:calc(12px * var(--font-scale, 1)); color:var(--usuzumi); margin-bottom:6px; }
   
@@ -657,6 +721,12 @@
   
   .admin-fanart-thumb{ aspect-ratio:4/5; background:var(--kinari); overflow:hidden; }
   
+  .admin-fanart-invalid{
+    display:flex; align-items:center; justify-content:center; width:100%; height:100%;
+    text-align:center; padding:10px; font-size:calc(11px * var(--font-scale, 1)); color:var(--bengara);
+    background:var(--kinari-2);
+  }
+  
   .admin-fanart-thumb img{ width:100%; height:100%; object-fit:cover; }
   
   .admin-fanart-info{ padding:12px; }
@@ -689,6 +759,18 @@
   
   .admin-works-form-title{ font-family:var(--f-mincho); font-size:calc(15px * var(--font-scale, 1)); margin-bottom:16px; }
   
+  .admin-request-status-toggle{ display:flex; flex-direction:column; gap:10px; margin-bottom:20px; }
+  
+  .admin-request-status-toggle label{
+    display:flex; align-items:center; gap:8px; font-size:calc(13px * var(--font-scale, 1)); color:var(--sumi); cursor:pointer;
+  }
+  
+  #requestStatusText{
+    width:100%; font-family:var(--f-gothic); font-size:max(15px, calc(15px * var(--font-scale, 1))); color:var(--sumi);
+    background:var(--kinari-2); border:1px solid var(--line); border-radius:2px; padding:10px 12px; resize:vertical;
+    margin-top:6px; margin-bottom:16px;
+  }
+  
   .admin-works-form-grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
   
   .admin-works-form label{ display:block; font-size:calc(11.5px * var(--font-scale, 1)); color:var(--usuzumi); }
@@ -702,6 +784,38 @@
   }
   
   .admin-works-form-note{ margin-top:12px; font-size:calc(12px * var(--font-scale, 1)); color:var(--bengara); }
+  
+  .admin-pickup-setting{
+    margin-top:14px; border:1px solid var(--line); border-radius:6px; padding:14px 16px;
+    background:var(--kinari-2);
+  }
+  
+  .admin-pickup-setting summary{
+    cursor:pointer; font-size:calc(12.5px * var(--font-scale, 1)); color:var(--sumi);
+  }
+  
+  .admin-pickup-hint{
+    font-size:calc(11.5px * var(--font-scale, 1)); color:var(--usuzumi); line-height:1.8;
+    margin:10px 0 12px;
+  }
+  
+  .admin-pickup-crop-frame{
+    position:relative; width:100%; max-width:320px; aspect-ratio:16/9; overflow:hidden;
+    border-radius:4px; border:1px solid var(--line); cursor:crosshair; background:var(--kinari);
+  }
+  
+  .admin-pickup-crop-frame img{ width:100%; height:100%; object-fit:cover; pointer-events:none; }
+  
+  .admin-pickup-crop-marker{
+    position:absolute; width:18px; height:18px; border-radius:50%;
+    border:2px solid var(--kinari); background:var(--bengara); box-shadow:0 0 0 1px var(--bengara);
+    transform:translate(-50%,-50%); pointer-events:none;
+  }
+  
+  .admin-pickup-exclude{
+    display:flex; align-items:center; gap:8px; margin-top:14px; cursor:pointer;
+    font-size:calc(12.5px * var(--font-scale, 1)); color:var(--sumi);
+  }
   
   @media (max-width:600px){ .admin-works-form-grid{ grid-template-columns:1fr; } }
   
@@ -789,14 +903,65 @@
 </style>
 </head>
 <body>
+<div class="network-status-banner" id="networkStatusBanner" hidden></div>
+<script>
+  // 通信が切れた時に、それとなく知らせる。投稿・いいねなどをしようとした瞬間に、
+  // 原因不明のエラーに見えてしまうのを防ぐための、控えめな配慮。
+  (function(){
+    const banner = document.getElementById('networkStatusBanner');
+    if(!banner) return;
+    let hideTimer = null;
+    function showOffline(){
+      clearTimeout(hideTimer);
+      banner.textContent = '通信が切れているようです。操作ができない場合があります。';
+      banner.className = 'network-status-banner offline show';
+      banner.hidden = false;
+    }
+    function showOnlineBriefly(){
+      clearTimeout(hideTimer);
+      banner.textContent = '通信が回復しました。';
+      banner.className = 'network-status-banner online show';
+      banner.hidden = false;
+      hideTimer = setTimeout(()=>{
+        banner.classList.remove('show');
+        setTimeout(()=>{ banner.hidden = true; }, 300);
+      }, 2500);
+    }
+    window.addEventListener('offline', showOffline);
+    window.addEventListener('online', showOnlineBriefly);
+    if(!navigator.onLine) showOffline();
+  })();
+</script>
 <script>
   // 投稿者名などの「自由入力された文字列」を画面に表示する前に、必ずこの関数を通す。
   // これを通さずに直接HTMLに埋め込むと、悪意のある入力によって任意のコードが実行されてしまう
   // (XSS脆弱性)ため、ユーザーが入力した文字列を表示する場所では、必ず使用すること。
   window.escapeHtml = function(str){
-    const div = document.createElement('div');
-    div.textContent = str == null ? '' : String(str);
-    return div.innerHTML;
+    // 属性値(例:src="...")の中で使っても安全なように、
+    // < > & に加えて、二重引用符・単引用符もすべて実体参照に置き換える。
+    if(str == null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  };
+  // HTML用のescapeHtmlとは、目的も置き場所も別のエスケープ。
+  // onerror="...'ここに値を入れる'..." のように、JavaScriptの文字列リテラルの
+  // 「中」に値を埋め込む場合は、HTMLの記号(< > など)ではなく、その文字列リテラル
+  // 自体を壊せる記号(引用符・バックスラッシュ・改行)を無害化する必要がある。
+  // HTML用のエスケープだけでは、この場所は守れない。
+  window.escapeJsString = function(str){
+    if(str == null) return '';
+    return String(str)
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r')
+      .replace(/</g, '\\x3C') // 閉じタグ('<'+'/script>'のような形)で、囲っているタグ自体を破壊できないようにする
+      .replace(/>/g, '\\x3E');
   };
 </script>
 <script>
@@ -827,9 +992,8 @@
         </li>
         <li><a href="index.html#profile">Profile</a></li>
         <li><a href="index.html#contact">Contact</a></li>
+        <li><a href="fanart.html">Platform</a></li>
         <li><a href="faq.html">FAQ</a></li>
-        <li><a href="fanart.html">Fan Art</a></li>
-        <li><a href="guidelines.html">Guidelines</a></li>
         <li><a href="#" id="navRewatch">Rewatch</a></li>
         <li><a href="#" id="navQr">QR Code</a></li>
       </ul>
@@ -859,18 +1023,24 @@
     </div>
     <div class="settings-row">
       <span class="settings-row-label">BGM</span>
-      <button class="bgm-toggle" id="bgmToggle" aria-label="BGMを再生" aria-pressed="false">
-        <svg class="bgm-icon-play" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14l11-7z"/></svg>
-        <svg class="bgm-icon-pause" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M7 5v14M17 5v14"/></svg>
-      </button>
+      <div class="bgm-controls">
+        <button class="bgm-nav-btn" id="bgmPrevBtn" aria-label="前の曲">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM18 6v12l-9-6z"/></svg>
+        </button>
+        <button class="bgm-toggle" id="bgmToggle" aria-label="BGMを再生" aria-pressed="false">
+          <svg class="bgm-icon-play" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14l11-7z"/></svg>
+          <svg class="bgm-icon-pause" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M7 5v14M17 5v14"/></svg>
+        </button>
+        <button class="bgm-nav-btn" id="bgmNextBtn" aria-label="次の曲">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 6v12l9-6z"/></svg>
+        </button>
+      </div>
     </div>
-    <audio id="bgmAudio" loop preload="none">
-      <!-- 実際のBGMファイルが用意できたら、下記のsrcを差し替えてください -->
-      <source src="REPLACE_WITH_YOUR_BGM_FILE.mp3" type="audio/mpeg">
-    </audio>
+    <p class="bgm-track-name" id="bgmTrackName"></p>
+    <audio id="bgmAudio" preload="none"></audio>
   </div>
   <div class="site-search-panel" id="siteSearchPanel" hidden>
-    <input type="search" id="siteSearchInput" class="site-search-input" placeholder="サイト内を検索..." aria-label="サイト内検索">
+    <input type="search" id="siteSearchInput" class="site-search-input" maxlength="20" placeholder="サイト内を検索..." aria-label="サイト内検索">
     <ul class="site-search-results" id="siteSearchResults"></ul>
     <p class="site-search-empty" id="siteSearchEmpty" hidden>一致する内容が見つかりませんでした。</p>
   </div>
@@ -931,7 +1101,21 @@
         </div>
       </div>
 
-      <div class="admin-gate" id="adminGate">
+      <div class="admin-gate" id="adminEmailGate">
+        <p class="admin-gate-intro">
+          管理画面を開くには、まずメールでの本人確認が必要です。あらかじめ決められた
+          メールアドレスに、ログイン用のリンクをお送りします。
+        </p>
+        <button type="button" class="btn-line press-fill" id="adminSendLinkBtn">
+          <span>ログイン用のリンクをメールで受け取る</span>
+        </button>
+        <p class="admin-gate-note" id="adminSendLinkNote" hidden></p>
+        <p class="admin-gate-note" id="adminEmailCheckNote" hidden>
+          メールに届いたリンクを開くと、この画面に自動的に戻ってきます。
+        </p>
+      </div>
+
+      <div class="admin-gate" id="adminGate" hidden>
         <label class="admin-gate-field">
           <span>管理者用パスワード</span>
           <input type="password" id="adminPassword" autocomplete="off">
@@ -947,6 +1131,60 @@
         <button type="button" class="admin-tab" data-tab="fanart">ファンアート</button>
         <button type="button" class="admin-tab" data-tab="banned">BANリスト</button>
         <button type="button" class="admin-tab" data-tab="works">作品</button>
+        <button type="button" class="admin-tab" data-tab="music">音楽</button>
+        <button type="button" class="admin-tab" data-tab="novels">小説</button>
+        <button type="button" class="admin-tab" data-tab="movies">映像</button>
+        <button type="button" class="admin-tab" data-tab="requestStatus">ご依頼設定</button>
+      </div>
+
+      <div class="admin-panel-body" id="adminRequestStatusPanel" hidden>
+        <p class="admin-works-form-title">ガイドラインページの「ご依頼」タブに表示する内容を、それぞれ個別に設定できます。</p>
+
+        <p class="admin-works-form-title" style="font-size:calc(13px * var(--font-scale, 1)); margin-top:28px;">既存作品の有償利用について</p>
+        <div class="admin-request-status-toggle">
+          <label>
+            <input type="radio" name="existingWorkStatus" id="existingWorkStatusAccepting" value="accepting">
+            <span>現在、既存作品の有償利用を受け付けています</span>
+          </label>
+          <label>
+            <input type="radio" name="existingWorkStatus" id="existingWorkStatusClosed" value="closed" checked>
+            <span>現在、既存作品の有償利用を受け付けていません</span>
+          </label>
+        </div>
+        <label class="admin-works-form-full" id="existingWorkStatusTextLabel" hidden>
+          <span>受付中に表示する文章</span>
+          <textarea id="existingWorkStatusText" rows="4">既に公開している作品(イラスト・曲・文章など)を、商用目的でご利用になりたい場合は、事前に必ずメールにてご確認をお願いいたします。金額などの詳細は、ご利用内容に応じて個別にご相談させていただきます。</textarea>
+        </label>
+        <button type="button" class="btn-line press-fill" id="existingWorkStatusSaveBtn">
+          <span>保存する</span>
+        </button>
+        <p class="admin-works-form-note" id="existingWorkStatusNote" hidden></p>
+
+        <p class="admin-works-form-title" style="font-size:calc(13px * var(--font-scale, 1)); margin-top:40px;">オーダーメイドのご依頼について</p>
+        <div class="admin-request-status-toggle">
+          <label>
+            <input type="radio" name="requestStatus" id="requestStatusAccepting" value="accepting">
+            <span>現在、オーダーメイドのご依頼を受け付けています</span>
+          </label>
+          <label>
+            <input type="radio" name="requestStatus" id="requestStatusClosed" value="closed" checked>
+            <span>現在、オーダーメイドのご依頼を受け付けていません</span>
+          </label>
+        </div>
+        <label class="admin-works-form-full" id="requestStatusTextLabel" hidden>
+          <span>受付中に表示する文章</span>
+          <textarea id="requestStatusText" rows="10">新しくイラストなどを描き下ろす、オーダーメイドのご依頼も承っております。
+
+用途やサイズによって変動しますが、目安として、アイコン・小さめのイラストで5,000円〜、1枚絵のイラストで20,000円〜となります。楽曲制作は、尺や編成により変動しますので、お気軽にお見積もりをご相談ください。
+
+ご依頼の流れは、まずお問い合わせフォームよりご連絡ください。用途・サイズ・納期などの詳細をヒアリングさせていただいた後、ラフ案を提出します。ご確認・修正を経て、本制作へ進みます(お問い合わせ→ヒアリング→ラフ提出→修正→納品)。
+
+納期は、内容にもよりますが、ラフ提出から納品まで概ね2〜4週間ほどです。お急ぎの場合は、お問い合わせ時にご相談ください。</textarea>
+        </label>
+        <button type="button" class="btn-line press-fill" id="requestStatusSaveBtn">
+          <span>保存する</span>
+        </button>
+        <p class="admin-works-form-note" id="requestStatusNote" hidden></p>
       </div>
 
       <div class="admin-panel-body" id="adminInquiriesPanel" hidden>
@@ -980,12 +1218,83 @@
           </div>
           <label class="admin-works-form-full">説明文(日本語)<textarea id="workDescJa" rows="2" required></textarea></label>
           <label class="admin-works-form-full">説明文(英語)<textarea id="workDescEn" rows="2" required></textarea></label>
+          <details class="admin-pickup-setting" id="workPickupSetting" hidden>
+            <summary>ピックアップに載った際のサムネ設定(任意)</summary>
+            <p class="admin-pickup-hint">
+              ピックアップでは、16:9の枠に切り取られたサムネイルが使われます。下の画像をタップ(クリック)して、見せたい部分を選んでください。設定しない場合は中央が使われます。
+            </p>
+            <div class="admin-pickup-crop-frame" id="workPickupCropFrame">
+              <img id="workPickupCropImg" alt="">
+              <div class="admin-pickup-crop-marker" id="workPickupCropMarker" hidden></div>
+            </div>
+            <input type="hidden" id="workPickupFocusX" value="50">
+            <input type="hidden" id="workPickupFocusY" value="50">
+          </details>
+          <label class="admin-pickup-exclude">
+            <input type="checkbox" id="workPickupExcluded">
+            <span>この作品はピックアップに載せない</span>
+          </label>
           <button type="submit" class="btn-line press-fill"><span>追加する</span></button>
           <p class="admin-works-form-note" id="adminWorksFormNote" hidden></p>
         </form>
         <div class="admin-works-grid" id="adminWorksGrid" hidden></div>
         <p class="admin-empty" id="adminWorksEmpty" hidden>作品がまだありません。</p>
         <p class="admin-loading" id="adminWorksLoading" hidden>読み込み中…</p>
+      </div>
+
+      <div class="admin-panel-body" id="adminMusicPanel" hidden>
+        <form class="admin-works-form" id="adminMusicForm">
+          <p class="admin-works-form-title">新しい曲を追加</p>
+          <div class="admin-works-form-grid">
+            <label>タイトル<input type="text" id="musicTitle" required></label>
+            <label>年<input type="text" id="musicYear" placeholder="2026" required></label>
+            <label>音声ファイルのURL<input type="url" id="musicAudio" placeholder="https://..." required></label>
+            <label>背景色(ジャケット風の色)<input type="text" id="musicColor" placeholder="linear-gradient(150deg,#A34430,#7A311F)" value="linear-gradient(150deg,#A34430,#7A311F)"></label>
+          </div>
+          <label class="admin-works-form-full">説明文<textarea id="musicDesc" rows="2" required></textarea></label>
+          <button type="submit" class="btn-line press-fill"><span>追加する</span></button>
+          <p class="admin-works-form-note" id="adminMusicFormNote" hidden></p>
+        </form>
+        <div class="admin-works-grid" id="adminMusicGrid" hidden></div>
+        <p class="admin-empty" id="adminMusicEmpty" hidden>曲がまだありません。</p>
+        <p class="admin-loading" id="adminMusicLoading" hidden>読み込み中…</p>
+      </div>
+
+      <div class="admin-panel-body" id="adminNovelsPanel" hidden>
+        <form class="admin-works-form" id="adminNovelsForm">
+          <p class="admin-works-form-title">新しい小説を追加</p>
+          <div class="admin-works-form-grid">
+            <label>タイトル<input type="text" id="novelTitle" required></label>
+            <label>年<input type="text" id="novelYear" placeholder="2026" required></label>
+            <label>背景色(表紙風の色)<input type="text" id="novelColor" placeholder="linear-gradient(150deg,#A34430,#7A311F)" value="linear-gradient(150deg,#A34430,#7A311F)"></label>
+          </div>
+          <label class="admin-works-form-full">一覧に出る紹介文(抜粋)<textarea id="novelExcerpt" rows="2" required></textarea></label>
+          <label class="admin-works-form-full">短い説明文<textarea id="novelDesc" rows="2" required></textarea></label>
+          <label class="admin-works-form-full">本文<textarea id="novelBody" rows="6" required></textarea></label>
+          <button type="submit" class="btn-line press-fill"><span>追加する</span></button>
+          <p class="admin-works-form-note" id="adminNovelsFormNote" hidden></p>
+        </form>
+        <div class="admin-works-grid" id="adminNovelsGrid" hidden></div>
+        <p class="admin-empty" id="adminNovelsEmpty" hidden>小説がまだありません。</p>
+        <p class="admin-loading" id="adminNovelsLoading" hidden>読み込み中…</p>
+      </div>
+
+      <div class="admin-panel-body" id="adminMoviesPanel" hidden>
+        <form class="admin-works-form" id="adminMoviesForm">
+          <p class="admin-works-form-title">新しい映像を追加</p>
+          <div class="admin-works-form-grid">
+            <label>タイトル<input type="text" id="movieTitle" required></label>
+            <label>年<input type="text" id="movieYear" placeholder="2026" required></label>
+            <label>動画のURL(YouTubeまたは動画ファイル)<input type="url" id="movieUrl" placeholder="https://..." required></label>
+            <label>背景色(URLが表示できない時用)<input type="text" id="movieColor" placeholder="linear-gradient(150deg,#2B4A5C,#1D3644)" value="linear-gradient(150deg,#2B4A5C,#1D3644)"></label>
+          </div>
+          <label class="admin-works-form-full">説明文<textarea id="movieDesc" rows="2" required></textarea></label>
+          <button type="submit" class="btn-line press-fill"><span>追加する</span></button>
+          <p class="admin-works-form-note" id="adminMoviesFormNote" hidden></p>
+        </form>
+        <div class="admin-works-grid" id="adminMoviesGrid" hidden></div>
+        <p class="admin-empty" id="adminMoviesEmpty" hidden>映像がまだありません。</p>
+        <p class="admin-loading" id="adminMoviesLoading" hidden>読み込み中…</p>
       </div>
     </div>
   </section>
@@ -1546,9 +1855,23 @@
       return text.length > 34 ? text.slice(0, 34) + '…' : text;
     }
 
+    // 「いかにもコードのような文字列」を検知するための、簡易的なパターン一覧。
+    // 検索窓での、そもそもの検索自体をさせない追加の防御層として使う
+    // (表示側はescapeHtmlで無害化済み)。
+    const SEARCH_CODE_LIKE_PATTERN = /<\s{0,10}(script|iframe|object|embed|svg|img|style|link|meta|form|body|a)\b|javascript\s{0,10}:|data\s{0,10}:\s{0,10}text\/html|on[a-zA-Z]{1,20}\s{0,10}=|document\s{0,10}\.\s{0,10}\w|window\s{0,10}\.\s{0,10}\w|eval\s{0,10}\(|<%|%>|\$\{/i;
+    const CODE_LIKE_MAX_LENGTH_SEARCH = 2000;
+    function searchContainsCodeLikeContent(text){
+      if(typeof text !== 'string') return false;
+      if(text.length > CODE_LIKE_MAX_LENGTH_SEARCH) return true;
+      const normalized = text.normalize('NFKC');
+      const stripped = normalized.replace(/[\s\u200B-\u200D\uFEFF]/g, '');
+      return SEARCH_CODE_LIKE_PATTERN.test(normalized) || SEARCH_CODE_LIKE_PATTERN.test(stripped);
+    }
+    window.containsCodeLikeContent = searchContainsCodeLikeContent;
     function renderResults(query){
+      query = query.slice(0, 20); // 念のため、こちらでも文字数を20字までに制限する
       siteSearchResults.innerHTML = '';
-      if(query === ''){
+      if(query === '' || searchContainsCodeLikeContent(query)){
         siteSearchEmpty.hidden = true;
         return;
       }
@@ -1565,7 +1888,7 @@
         const li = document.createElement('li');
         const a = document.createElement('a');
         a.href = entry.anchor;
-        a.innerHTML = `<span class="site-search-result-section">${isEnglish() ? entry.sectionEn : entry.section}</span><span class="site-search-result-snippet">${snippetFor(entry)}</span>`;
+        a.innerHTML = `<span class="site-search-result-section">${escapeHtml(isEnglish() ? entry.sectionEn : entry.section)}</span><span class="site-search-result-snippet">${escapeHtml(snippetFor(entry))}</span>`;
         a.addEventListener('click', (e)=>{
           e.preventDefault();
           searchPanelCtl.close();
@@ -1632,16 +1955,77 @@
     const rewatchCtl = bindSheetModal(rewatchBackdrop, rewatchSheet, 400, renderRewatchList);
     navRewatch.addEventListener('click', (e)=>{ e.preventDefault(); rewatchCtl.open(); });
     document.getElementById('rewatchClose').addEventListener('click', rewatchCtl.close);
+
+    // ハンドル部分(上部のつまみ)を指・マウスでドラッグして、シートの高さを
+    // 上下に自由に調整できるようにする。上に引っ張れば大きく、下に引っ張れば
+    // 小さくなり、さらに大きく下へ引っ張ると、そのまま閉じる。
+    (function(){
+      const handle = rewatchSheet.querySelector('.bottom-sheet-handle');
+      if(!handle) return;
+      const MIN_HEIGHT_VH = 40;
+      const MAX_HEIGHT_VH = 92;
+      const DEFAULT_HEIGHT_VH = 70;
+      const CLOSE_THRESHOLD_VH = 22; // これ以上下に引っ張ったら閉じる
+      let startY = 0;
+      let currentY = 0;
+      let baseHeightVh = DEFAULT_HEIGHT_VH;
+      let dragging = false;
+      function currentHeightVh(){
+        const rect = rewatchSheet.getBoundingClientRect();
+        return (rect.height / window.innerHeight) * 100;
+      }
+      function onStart(clientY){
+        dragging = true;
+        startY = clientY;
+        currentY = clientY;
+        baseHeightVh = currentHeightVh();
+        rewatchSheet.style.transition = 'none';
+      }
+      function onMove(clientY){
+        if(!dragging) return;
+        currentY = clientY;
+        const deltaVh = ((startY - currentY) / window.innerHeight) * 100; // 上へ引っ張ると正の値
+        const newHeightVh = Math.max(MIN_HEIGHT_VH, Math.min(MAX_HEIGHT_VH, baseHeightVh + deltaVh));
+        rewatchSheet.style.maxHeight = newHeightVh + 'vh';
+        rewatchSheet.style.height = newHeightVh + 'vh';
+      }
+      function onEnd(){
+        if(!dragging) return;
+        dragging = false;
+        rewatchSheet.style.transition = '';
+        const deltaVh = ((startY - currentY) / window.innerHeight) * 100;
+        if(deltaVh < -CLOSE_THRESHOLD_VH){
+          rewatchCtl.close();
+        }
+      }
+      handle.addEventListener('touchstart', (e)=> onStart(e.touches[0].clientY), { passive:true });
+      handle.addEventListener('touchmove', (e)=> onMove(e.touches[0].clientY), { passive:true });
+      handle.addEventListener('touchend', onEnd);
+      handle.addEventListener('mousedown', (e)=>{ onStart(e.clientY); e.preventDefault(); });
+      document.addEventListener('mousemove', (e)=>{ if(dragging) onMove(e.clientY); });
+      document.addEventListener('mouseup', onEnd);
+    })();
   }catch(err){ console.error('rewatch init failed:', err); }
 
   try{
     const qrBackdrop = document.getElementById('qrBackdrop');
     const qrModal = document.getElementById('qrModal');
     const navQr = document.getElementById('navQr');
+    // 前景を墨色、背景を生成り色にすることで、和の色味を保ちつつ、
+    // 通常の白黒QRコードと同じくらいの高いコントラストを確保している(読み取りやすさ優先)。
+    // 色そのものはテーマ(ライト/ダーク)に関わらず、常にこの2色で固定。
+    function qrImageUrl(url){
+      return 'https://api.qrserver.com/v1/create-qr-code/?size=192x192'
+        + '&color=221F1B&bgcolor=F6F1E6'
+        + '&data=' + encodeURIComponent(url);
+    }
+    const qrUrl = location.origin + location.pathname;
+    // モーダルを開く前に、あらかじめ画像を読み込んでおく(プリロード)。
+    const qrPreload = new Image();
+    qrPreload.src = qrImageUrl(qrUrl);
     function fillQrContent(){
-      const url = location.origin + location.pathname;
-      document.getElementById('qrImage').src = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(url);
-      document.getElementById('qrUrlText').textContent = url;
+      document.getElementById('qrImage').src = qrImageUrl(qrUrl);
+      document.getElementById('qrUrlText').textContent = qrUrl;
     }
     const qrCtl = bindSheetModal(qrBackdrop, qrModal, 300, fillQrContent);
     navQr.addEventListener('click', (e)=>{ e.preventDefault(); qrCtl.open(); });
@@ -1649,33 +2033,89 @@
   }catch(err){ console.error('qr init failed:', err); }
 
   try{
+    // Musicページで公開している曲と同じ内容。曲を増やす時は、Musicページの
+    // 曲一覧に追加するのに合わせて、ここにも同じ形で1行追加してください。
+    const BGM_TRACKS = [
+      { title:'灯りをともす', src:'' },
+      { title:'庭の記録', src:'' }
+    ];
+
     const bgmToggle = document.getElementById('bgmToggle');
+    const bgmPrevBtn = document.getElementById('bgmPrevBtn');
+    const bgmNextBtn = document.getElementById('bgmNextBtn');
     const bgmAudio = document.getElementById('bgmAudio');
-    bgmToggle.addEventListener('click', ()=>{
-      const playing = bgmToggle.getAttribute('aria-pressed') === 'true';
-      if(playing){
-        bgmAudio.pause();
-        bgmToggle.setAttribute('aria-pressed', 'false');
-        bgmToggle.setAttribute('aria-label', 'BGMを再生');
-        bgmToggle.querySelector('.bgm-icon-play').hidden = false;
-        bgmToggle.querySelector('.bgm-icon-pause').hidden = true;
-      }else{
+    const bgmTrackName = document.getElementById('bgmTrackName');
+    const playIcon = bgmToggle.querySelector('.bgm-icon-play');
+    const pauseIcon = bgmToggle.querySelector('.bgm-icon-pause');
+    let bgmIndex = 0;
+    let bgmLoaded = false;
+
+    function setPlayingUi(playing){
+      bgmToggle.setAttribute('aria-pressed', String(playing));
+      bgmToggle.setAttribute('aria-label', playing ? 'BGMを停止' : 'BGMを再生');
+      playIcon.hidden = playing;
+      pauseIcon.hidden = !playing;
+    }
+
+    function loadBgmTrack(index, keepPlaying){
+      const total = BGM_TRACKS.length;
+      bgmIndex = ((index % total) + total) % total;
+      const track = BGM_TRACKS[bgmIndex];
+      bgmAudio.src = track.src || '';
+      bgmTrackName.textContent = track.title || '';
+      bgmLoaded = true;
+      if(keepPlaying && track.src){
         bgmAudio.play().catch(()=>{});
-        bgmToggle.setAttribute('aria-pressed', 'true');
-        bgmToggle.setAttribute('aria-label', 'BGMを停止');
-        bgmToggle.querySelector('.bgm-icon-play').hidden = true;
-        bgmToggle.querySelector('.bgm-icon-pause').hidden = false;
+      }
+    }
+
+    bgmToggle.addEventListener('click', ()=>{
+      if(!bgmLoaded) loadBgmTrack(0, false);
+      if(bgmAudio.paused){
+        bgmAudio.play().catch(()=>{
+          console.warn('BGM再生に失敗しました。音声ファイルが未設定の可能性があります。');
+        });
+        setPlayingUi(true);
+      }else{
+        bgmAudio.pause();
+        setPlayingUi(false);
       }
     });
+
+    bgmPrevBtn.addEventListener('click', ()=>{
+      if(!bgmLoaded) loadBgmTrack(0, false);
+      loadBgmTrack(bgmIndex - 1, !bgmAudio.paused);
+    });
+    bgmNextBtn.addEventListener('click', ()=>{
+      if(!bgmLoaded) loadBgmTrack(0, false);
+      loadBgmTrack(bgmIndex + 1, !bgmAudio.paused);
+    });
+    bgmAudio.addEventListener('ended', ()=>{
+      loadBgmTrack(bgmIndex + 1, true);
+    });
+    bgmAudio.addEventListener('play', ()=> setPlayingUi(true));
+    bgmAudio.addEventListener('pause', ()=> setPlayingUi(false));
   }catch(err){ console.error('bgm init failed:', err); }
 
   try{
     // 管理者用パスワード。ここに、ご自身で決めたパスワードを入力してください。
     // 注意:このパスワードはページのコード内にそのまま書かれているため、
     // 「誰でも簡単には見られないようにする」程度の、簡易的な仕組みです。
-    const ADMIN_PASSWORD = 'YOUR_ADMIN_PASSWORD';
+    const ADMIN_PASSWORD = '8U%vz9FR#R^zhJew5g8m';
     const ADMIN_SESSION_KEY = 'admin-unlocked';
+    // ログイン用のリンクを送る、唯一のメールアドレス。ご自身のメールアドレスに
+    // 置き換えてください。パスワードとは違い、このメールアドレスの受信箱を
+    // 実際に開けなければ突破できないため、より確実な鍵になる。
+    const ADMIN_EMAIL = 'YOUR_ADMIN_EMAIL';
+    // ログイン用のリンクを開いた時に、戻ってくる先のURL。実際にサイトを
+    // 公開したドメインに合わせて、書き換えてください。
+    const ADMIN_LINK_RETURN_URL = 'https://YOUR_SITE_DOMAIN/admin.html';
+    const EMAIL_FOR_SIGNIN_KEY = 'admin-email-for-signin';
 
+    const emailGate = document.getElementById('adminEmailGate');
+    const sendLinkBtn = document.getElementById('adminSendLinkBtn');
+    const sendLinkNote = document.getElementById('adminSendLinkNote');
+    const emailCheckNote = document.getElementById('adminEmailCheckNote');
     const gate = document.getElementById('adminGate');
     const passwordInput = document.getElementById('adminPassword');
     const unlockBtn = document.getElementById('adminUnlockBtn');
@@ -1758,6 +2198,28 @@
     const fanartLoading = document.getElementById('adminFanartLoading');
     let fanartLoaded = false;
 
+    // fanart.html側の投稿チェックと同じ基準。管理画面では、この基準を満たさない
+    //投稿があった場合、削除ボタンはそのまま使えるようにしつつ、画像は表示せず
+    // 「対応していないURL」と分かるようにしておく(隔離)。
+    const ALLOWED_MEDIA_HOSTS = [
+      'twitter.com', 'x.com', 'pbs.twimg.com', 'video.twimg.com',
+      'youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be', 'img.youtube.com',
+      'pixiv.net', 'www.pixiv.net', 'i.pximg.net'
+    ];
+    const BLOCKED_URL_EXTENSIONS = /\.(svg|html?|xhtml|js|mjs|php|exe|scr|bat|cmd|jar|apk|dmg|msi|sh|ps1)(\?.*)?$/i;
+    const MAX_MEDIA_URL_LENGTH = 200;
+    function isAllowedMediaUrl(rawUrl){
+      if(typeof rawUrl !== 'string' || rawUrl.length > MAX_MEDIA_URL_LENGTH) return false;
+      let u;
+      try{ u = new URL(rawUrl); }catch(e){ return false; }
+      if(u.protocol !== 'https:') return false;
+      const host = u.hostname.toLowerCase();
+      const hostOk = ALLOWED_MEDIA_HOSTS.some(allowed => host === allowed || host.endsWith('.' + allowed));
+      if(!hostOk) return false;
+      if(BLOCKED_URL_EXTENSIONS.test(u.pathname)) return false;
+      return true;
+    }
+
     async function loadFanart(){
       const fb = window.__adminFirebase;
       if(!fb || !fb.ready){ fanartLoading.hidden = true; fanartEmpty.hidden = false; fanartEmpty.textContent = '読み込みに失敗しました。'; return; }
@@ -1776,10 +2238,10 @@
           const card = document.createElement('div');
           card.className = 'admin-fanart-card';
           card.innerHTML = `
-            <div class="admin-fanart-thumb"><img src="${item.imageUrl || ''}" alt="" loading="lazy" onerror="this.style.opacity=0"></div>
+            <div class="admin-fanart-thumb">${isAllowedMediaUrl(item.imageUrl) ? `<img src="${escapeHtml(item.imageUrl || '')}" alt="" loading="lazy" onerror="this.style.opacity=0">` : `<div class="admin-fanart-invalid">⚠ 対応していないURL</div>`}</div>
             <div class="admin-fanart-info">
               <p class="admin-fanart-name">${escapeHtml(item.name || '名無しさん')}</p>
-              <p class="admin-fanart-meta${item.isR18 ? ' r18' : ''}">${formatDate(item.createdAt)}${item.isR18 ? ' ・ R18' : ''}</p>
+              <p class="admin-fanart-meta${item.isR18 ? ' r18' : ''}">${item.category === 'fanart' ? 'ファンアート' : 'Share room'}・${formatDate(item.createdAt)}${item.isR18 ? ' ・ R18' : ''}</p>
               <div class="admin-fanart-actions">
                 <button type="button" data-action="delete">削除</button>
                 <button type="button" data-action="ban" ${item.authorUid ? '' : 'disabled title="ログインせず投稿されたためBAN不可"'}>BAN</button>
@@ -1826,7 +2288,7 @@
       bannedList.innerHTML = '';
       bannedList.hidden = true;
       try{
-        const snap = await fb.getDocs(fb.collection(fb.db, 'bannedUsers'));
+        const snap = await fb.getDocs(fb.query(fb.collection(fb.db, 'bannedUsers'), fb.limit(500)));
         bannedLoading.hidden = true;
         if(snap.empty){ bannedEmpty.hidden = false; return; }
         bannedEmpty.hidden = true;
@@ -1891,7 +2353,7 @@
       worksGrid.hidden = true;
       try{
         const hiddenIds = await getHiddenWorkIds();
-        const addedSnap = await fb.getDocs(fb.query(fb.collection(fb.db, 'works'), fb.orderBy('createdAt', 'desc')));
+        const addedSnap = await fb.getDocs(fb.query(fb.collection(fb.db, 'works'), fb.orderBy('createdAt', 'desc'), fb.limit(500)));
         worksLoading.hidden = true;
         const visibleHardcoded = HARDCODED_WORKS.filter(w => !hiddenIds.includes(w.id));
         const addedWorks = [];
@@ -1904,7 +2366,7 @@
           const card = document.createElement('div');
           card.className = 'admin-work-card';
           card.innerHTML = `
-            <div class="admin-work-thumb">${w.img ? `<img src="${w.img}" alt="">` : ''}</div>
+            <div class="admin-work-thumb">${w.img ? `<img src="${w.img}" alt="" loading="lazy" decoding="async">` : ''}</div>
             <div class="admin-work-info">
               <p class="admin-work-name">${escapeHtml(w.title)}</p>
               <p class="admin-work-meta${w.isFirestore ? '' : ' hardcoded'}">${w.sub} / ${w.year}${w.isFirestore ? '' : '(既存作品)'}</p>
@@ -1933,6 +2395,50 @@
       }
     }
 
+    // ピックアップ用のサムネ設定(16:9の焦点位置)。画像URLを入力した時だけ表示する。
+    const workPickupSetting = document.getElementById('workPickupSetting');
+    const workPickupCropFrame = document.getElementById('workPickupCropFrame');
+    const workPickupCropImg = document.getElementById('workPickupCropImg');
+    const workPickupCropMarker = document.getElementById('workPickupCropMarker');
+    const workPickupFocusXInput = document.getElementById('workPickupFocusX');
+    const workPickupFocusYInput = document.getElementById('workPickupFocusY');
+    function setWorkPickupFocus(xPct, yPct){
+      workPickupFocusXInput.value = Math.round(xPct);
+      workPickupFocusYInput.value = Math.round(yPct);
+      workPickupCropImg.style.objectPosition = `${xPct}% ${yPct}%`;
+      workPickupCropMarker.style.left = `${xPct}%`;
+      workPickupCropMarker.style.top = `${yPct}%`;
+      workPickupCropMarker.hidden = false;
+    }
+    workPickupCropFrame.addEventListener('click', (e)=>{
+      const rect = workPickupCropFrame.getBoundingClientRect();
+      const xPct = ((e.clientX - rect.left) / rect.width) * 100;
+      const yPct = ((e.clientY - rect.top) / rect.height) * 100;
+      setWorkPickupFocus(Math.max(0, Math.min(100, xPct)), Math.max(0, Math.min(100, yPct)));
+    });
+    function resetWorkPickupSetting(){
+      workPickupSetting.hidden = true;
+      workPickupSetting.open = false;
+      workPickupFocusXInput.value = '50';
+      workPickupFocusYInput.value = '50';
+      workPickupCropImg.style.objectPosition = '50% 50%';
+      workPickupCropMarker.hidden = true;
+      document.getElementById('workPickupExcluded').checked = false;
+    }
+    let workImgDebounce = null;
+    document.getElementById('workImg').addEventListener('input', (e)=>{
+      clearTimeout(workImgDebounce);
+      const url = e.target.value.trim();
+      if(!/^https?:\/\/.+/i.test(url)){
+        resetWorkPickupSetting();
+        return;
+      }
+      workImgDebounce = setTimeout(()=>{
+        workPickupCropImg.src = url;
+        workPickupSetting.hidden = false;
+      }, 300);
+    });
+
     worksForm.addEventListener('submit', async (e)=>{
       e.preventDefault();
       const fb = window.__adminFirebase;
@@ -1946,6 +2452,9 @@
         color: document.getElementById('workColor').value.trim(),
         desc: document.getElementById('workDescJa').value.trim(),
         descEn: document.getElementById('workDescEn').value.trim(),
+        pickupFocusX: parseInt(workPickupFocusXInput.value, 10) || 50,
+        pickupFocusY: parseInt(workPickupFocusYInput.value, 10) || 50,
+        pickupExcluded: document.getElementById('workPickupExcluded').checked,
         createdAt: new Date()
       };
       try{
@@ -1954,6 +2463,7 @@
         worksFormNote.hidden = false;
         worksForm.reset();
         document.getElementById('workColor').value = 'linear-gradient(150deg,#2B4A5C,#1D3644)';
+        resetWorkPickupSetting();
         worksLoaded = false;
         loadWorks();
         worksLoaded = true;
@@ -1964,8 +2474,191 @@
       }
     });
 
+    // --- 音楽・小説・映像の管理(仕組みは「作品」と同じ) ---
+    // それぞれ、「もともとコードに書かれている、既存のサンプル」を非表示リストで隠せるようにし、
+    // Firestoreに保存された新しいものは、直接削除できるようにしている。
+    function makeContentManager(opts){
+      const { hardcoded, hiddenDocId, collectionName, formEl, formNoteEl, gridEl, emptyEl, loadingEl, buildData, renderMeta, colorFieldId, colorDefault } = opts;
+      let loaded = false;
+
+      async function getHiddenIds(){
+        const fb = window.__adminFirebase;
+        try{
+          const snap = await fb.getDoc(fb.doc(fb.db, 'siteConfig', hiddenDocId));
+          return (snap.exists() && Array.isArray(snap.data().ids)) ? snap.data().ids : [];
+        }catch(err){ console.error(`failed to load hidden ${collectionName}:`, err); return []; }
+      }
+
+      async function load(){
+        const fb = window.__adminFirebase;
+        if(!fb || !fb.ready){ loadingEl.hidden = true; emptyEl.hidden = false; emptyEl.textContent = '読み込みに失敗しました。'; return; }
+        loadingEl.hidden = false;
+        gridEl.innerHTML = '';
+        gridEl.hidden = true;
+        try{
+          const hiddenIds = await getHiddenIds();
+          const addedSnap = await fb.getDocs(fb.query(fb.collection(fb.db, collectionName), fb.orderBy('createdAt', 'desc'), fb.limit(500)));
+          loadingEl.hidden = true;
+          const visibleHardcoded = hardcoded.filter(w => !hiddenIds.includes(w.id));
+          const added = [];
+          addedSnap.forEach(d => added.push({ id:d.id, ...d.data(), isFirestore:true }));
+          const all = [...visibleHardcoded, ...added];
+          if(!all.length){ emptyEl.hidden = false; return; }
+          emptyEl.hidden = true;
+          gridEl.hidden = false;
+          all.forEach(item=>{
+            const card = document.createElement('div');
+            card.className = 'admin-work-card';
+            card.innerHTML = `
+              <div class="admin-work-thumb"></div>
+              <div class="admin-work-info">
+                <p class="admin-work-name">${escapeHtml(item.title)}</p>
+                <p class="admin-work-meta${item.isFirestore ? '' : ' hardcoded'}">${renderMeta(item)}${item.isFirestore ? '' : '(既存)'}</p>
+                <div class="admin-work-actions"><button type="button">削除</button></div>
+              </div>`;
+            card.querySelector('button').addEventListener('click', async ()=>{
+              if(!window.confirm(`「${item.title}」を削除しますか?`)) return;
+              try{
+                if(item.isFirestore){
+                  await fb.deleteDoc(fb.doc(fb.db, collectionName, item.id));
+                }else{
+                  const ids = await getHiddenIds();
+                  if(!ids.includes(item.id)) ids.push(item.id);
+                  await fb.setDoc(fb.doc(fb.db, 'siteConfig', hiddenDocId), { ids });
+                }
+                card.remove();
+              }catch(err){ console.error(`delete ${collectionName} failed:`, err); alert('削除に失敗しました。'); }
+            });
+            gridEl.appendChild(card);
+          });
+        }catch(err){
+          console.error(`load ${collectionName} failed:`, err);
+          loadingEl.hidden = true;
+          emptyEl.hidden = false;
+          emptyEl.textContent = '読み込みに失敗しました。';
+        }
+      }
+
+      formEl.addEventListener('submit', async (e)=>{
+        e.preventDefault();
+        const fb = window.__adminFirebase;
+        if(!fb || !fb.ready){ alert('現在追加できません。時間をおいて再度お試しください。'); return; }
+        const data = buildData();
+        // 「いかにもコードのような文字列」が、どれかの項目に含まれていないか確認する
+        // (普段はご本人の入力なので問題ないが、アカウントの乗っ取りや、他所からの
+        //  コピペ経由で、意図せず紛れ込むことへの備えとして、念のため確認している)。
+        if(typeof window.containsCodeLikeContent === 'function'){
+          const hasCodeLike = Object.values(data).some(v => typeof v === 'string' && window.containsCodeLikeContent(v));
+          if(hasCodeLike){
+            formNoteEl.textContent = 'コードのような文字列が含まれているため、追加できません。内容をご確認ください。';
+            formNoteEl.hidden = false;
+            return;
+          }
+        }
+        try{
+          await fb.addDoc(fb.collection(fb.db, collectionName), data);
+          formNoteEl.textContent = '追加しました。サイト側は少し時間を置くと反映されます。';
+          formNoteEl.hidden = false;
+          formEl.reset();
+          if(colorFieldId) document.getElementById(colorFieldId).value = colorDefault;
+          loaded = false;
+          load();
+          loaded = true;
+        }catch(err){
+          console.error(`add ${collectionName} failed:`, err);
+          formNoteEl.textContent = '追加に失敗しました。時間をおいて再度お試しください。';
+          formNoteEl.hidden = false;
+        }
+      });
+
+      return {
+        get loaded(){ return loaded; },
+        set loaded(v){ loaded = v; },
+        load
+      };
+    }
+
+    const musicManager = makeContentManager({
+      hardcoded: [
+        { id:"lighting-a-lamp", title:"灯りをともす", year:"2025" },
+        { id:"garden-records", title:"庭の記録", year:"2023" }
+      ],
+      hiddenDocId: 'hiddenMusic',
+      collectionName: 'music',
+      formEl: document.getElementById('adminMusicForm'),
+      formNoteEl: document.getElementById('adminMusicFormNote'),
+      gridEl: document.getElementById('adminMusicGrid'),
+      emptyEl: document.getElementById('adminMusicEmpty'),
+      loadingEl: document.getElementById('adminMusicLoading'),
+      colorFieldId: 'musicColor',
+      colorDefault: 'linear-gradient(150deg,#A34430,#7A311F)',
+      renderMeta: (item)=> `Music / ${item.year}`,
+      buildData: ()=> ({
+        title: document.getElementById('musicTitle').value.trim(),
+        year: document.getElementById('musicYear').value.trim(),
+        audio: document.getElementById('musicAudio').value.trim(),
+        color: document.getElementById('musicColor').value.trim(),
+        desc: document.getElementById('musicDesc').value.trim(),
+        createdAt: new Date()
+      })
+    });
+
+    const novelsManager = makeContentManager({
+      hardcoded: [
+        { id:"sample-story", title:"サンプルの物語", year:"2026" }
+      ],
+      hiddenDocId: 'hiddenNovels',
+      collectionName: 'novels',
+      formEl: document.getElementById('adminNovelsForm'),
+      formNoteEl: document.getElementById('adminNovelsFormNote'),
+      gridEl: document.getElementById('adminNovelsGrid'),
+      emptyEl: document.getElementById('adminNovelsEmpty'),
+      loadingEl: document.getElementById('adminNovelsLoading'),
+      colorFieldId: 'novelColor',
+      colorDefault: 'linear-gradient(150deg,#A34430,#7A311F)',
+      renderMeta: (item)=> `Novel / ${item.year}`,
+      buildData: ()=> ({
+        title: document.getElementById('novelTitle').value.trim(),
+        year: document.getElementById('novelYear').value.trim(),
+        color: document.getElementById('novelColor').value.trim(),
+        excerpt: document.getElementById('novelExcerpt').value.trim(),
+        desc: document.getElementById('novelDesc').value.trim(),
+        body: document.getElementById('novelBody').value.trim(),
+        createdAt: new Date()
+      })
+    });
+
+    const moviesManager = makeContentManager({
+      hardcoded: [
+        { id:"sample-movie", title:"サンプルの映像", year:"2026" }
+      ],
+      hiddenDocId: 'hiddenMovies',
+      collectionName: 'movies',
+      formEl: document.getElementById('adminMoviesForm'),
+      formNoteEl: document.getElementById('adminMoviesFormNote'),
+      gridEl: document.getElementById('adminMoviesGrid'),
+      emptyEl: document.getElementById('adminMoviesEmpty'),
+      loadingEl: document.getElementById('adminMoviesLoading'),
+      colorFieldId: 'movieColor',
+      colorDefault: 'linear-gradient(150deg,#2B4A5C,#1D3644)',
+      renderMeta: (item)=> `Movie / ${item.year}`,
+      buildData: ()=> ({
+        title: document.getElementById('movieTitle').value.trim(),
+        year: document.getElementById('movieYear').value.trim(),
+        url: document.getElementById('movieUrl').value.trim(),
+        color: document.getElementById('movieColor').value.trim(),
+        desc: document.getElementById('movieDesc').value.trim(),
+        createdAt: new Date()
+      })
+    });
+
     // --- タブ切り替え ---
     const tabButtons = tabsEl.querySelectorAll('.admin-tab');
+    const musicPanel = document.getElementById('adminMusicPanel');
+    const novelsPanel = document.getElementById('adminNovelsPanel');
+    const moviesPanel = document.getElementById('adminMoviesPanel');
+    const requestStatusPanel = document.getElementById('adminRequestStatusPanel');
+    let requestStatusLoaded = false;
     tabButtons.forEach(btn=>{
       btn.addEventListener('click', ()=>{
         tabButtons.forEach(b=> b.classList.toggle('active', b === btn));
@@ -1974,11 +2667,132 @@
         fanartPanel.hidden = tab !== 'fanart';
         bannedPanel.hidden = tab !== 'banned';
         worksPanel.hidden = tab !== 'works';
+        musicPanel.hidden = tab !== 'music';
+        novelsPanel.hidden = tab !== 'novels';
+        moviesPanel.hidden = tab !== 'movies';
+        requestStatusPanel.hidden = tab !== 'requestStatus';
         if(tab === 'fanart' && !fanartLoaded){ fanartLoaded = true; loadFanart(); }
         if(tab === 'banned' && !bannedLoaded){ bannedLoaded = true; loadBanned(); }
         if(tab === 'works' && !worksLoaded){ worksLoaded = true; loadWorks(); }
+        if(tab === 'music' && !musicManager.loaded){ musicManager.loaded = true; musicManager.load(); }
+        if(tab === 'novels' && !novelsManager.loaded){ novelsManager.loaded = true; novelsManager.load(); }
+        if(tab === 'movies' && !moviesManager.loaded){ moviesManager.loaded = true; moviesManager.load(); }
+        if(tab === 'requestStatus' && !requestStatusLoaded){ requestStatusLoaded = true; loadRequestStatus(); }
       });
     });
+
+    // --- ご依頼設定(有償受付中 / 受付停止中の切り替え) ---
+    // 「既存作品の有償利用」「オーダーメイドのご依頼」、それぞれ独立して
+    // 受付中/停止中を切り替えられるようにする、共通の仕組み。
+    function wireRequestStatusToggle(docId, prefix){
+      const acceptingRadio = document.getElementById(prefix + 'Accepting');
+      const closedRadio = document.getElementById(prefix + 'Closed');
+      const textLabel = document.getElementById(prefix + 'TextLabel');
+      const textArea = document.getElementById(prefix + 'Text');
+      const saveBtn = document.getElementById(prefix + 'SaveBtn');
+      const noteEl = document.getElementById(prefix + 'Note');
+
+      async function load(){
+        const fb = window.__adminFirebase;
+        if(!fb || !fb.ready) return;
+        try{
+          const snap = await fb.getDoc(fb.doc(fb.db, 'siteConfig', docId));
+          if(snap.exists()){
+            const data = snap.data();
+            const accepting = data.accepting === true; // 未設定の間は「停止中」を正とする
+            acceptingRadio.checked = accepting;
+            closedRadio.checked = !accepting;
+            if(data.text) textArea.value = data.text;
+            textLabel.hidden = !accepting;
+          }
+        }catch(err){ console.error('load status failed (' + docId + '):', err); }
+      }
+      acceptingRadio.addEventListener('change', ()=>{ textLabel.hidden = false; });
+      closedRadio.addEventListener('change', ()=>{ textLabel.hidden = true; });
+      saveBtn.addEventListener('click', async ()=>{
+        const fb = window.__adminFirebase;
+        if(!fb || !fb.ready){ alert('現在保存できません。時間をおいて再度お試しください。'); return; }
+        const accepting = acceptingRadio.checked;
+        const text = textArea.value;
+        if(typeof window.containsCodeLikeContent === 'function' && window.containsCodeLikeContent(text)){
+          noteEl.textContent = 'コードのような文字列が含まれているため、保存できません。内容をご確認ください。';
+          noteEl.hidden = false;
+          return;
+        }
+        try{
+          await fb.setDoc(fb.doc(fb.db, 'siteConfig', docId), { accepting, text }, { merge:true });
+          noteEl.textContent = '保存しました。サイト側は少し時間を置くと反映されます。';
+          noteEl.hidden = false;
+        }catch(err){
+          console.error('save status failed (' + docId + '):', err);
+          noteEl.textContent = '保存に失敗しました。時間をおいて再度お試しください。';
+          noteEl.hidden = false;
+        }
+      });
+      return load;
+    }
+    const loadExistingWorkStatus = wireRequestStatusToggle('existingWorkStatus', 'existingWorkStatus');
+    const loadOrderMadeStatus = wireRequestStatusToggle('requestStatus', 'requestStatus');
+    function loadRequestStatus(){
+      loadExistingWorkStatus();
+      loadOrderMadeStatus();
+    }
+
+    // メールでのログイン確認(パスワードの前段階に追加した、もう1つの鍵)。
+    // 「正しいメールアドレスかどうか」の答え合わせは、このページのコードではなく、
+    // Firebase自身の裏側で行われるため、コードを読まれても突破できない。
+    async function initEmailLinkAuth(){
+      const fb = window.__adminFirebase;
+      if(!fb || !fb.ready) return;
+
+      sendLinkBtn.addEventListener('click', async ()=>{
+        try{
+          await fb.sendSignInLinkToEmail(fb.auth, ADMIN_EMAIL, {
+            url: ADMIN_LINK_RETURN_URL,
+            handleCodeInApp: true
+          });
+          localStorage.setItem(EMAIL_FOR_SIGNIN_KEY, ADMIN_EMAIL);
+          sendLinkNote.textContent = `${ADMIN_EMAIL} 宛てに、ログイン用のリンクを送信しました。`;
+          sendLinkNote.hidden = false;
+          emailCheckNote.hidden = false;
+          sendLinkBtn.disabled = true;
+        }catch(err){
+          console.error('failed to send sign-in link:', err);
+          sendLinkNote.textContent = '送信に失敗しました。時間をおいて再度お試しください。';
+          sendLinkNote.hidden = false;
+        }
+      });
+
+      // メールのリンクを開いて、この画面に戻ってきた場合の処理。
+      if(fb.isSignInWithEmailLink(fb.auth, window.location.href)){
+        let email = localStorage.getItem(EMAIL_FOR_SIGNIN_KEY);
+        if(!email) email = ADMIN_EMAIL; // 別の端末でリンクを開いた場合の保険
+        try{
+          await fb.signInWithEmailLink(fb.auth, email, window.location.href);
+          localStorage.removeItem(EMAIL_FOR_SIGNIN_KEY);
+          // リンクの情報がURLに残ったままにならないよう、きれいなURLに戻す。
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }catch(err){
+          console.error('email link sign-in failed:', err);
+        }
+      }
+
+      fb.onAuthStateChanged(fb.auth, (user)=>{
+        if(user && user.email === ADMIN_EMAIL){
+          // メール確認が完了したので、次はパスワードの入力に進む。
+          emailGate.hidden = true;
+          gate.hidden = false;
+        }else{
+          emailGate.hidden = false;
+          gate.hidden = true;
+        }
+      });
+    }
+    if(window.__adminFirebase && window.__adminFirebase.ready !== undefined){
+      initEmailLinkAuth();
+    }else{
+      document.addEventListener('admin-firebase-ready', initEmailLinkAuth, { once:true });
+    }
 
     unlockBtn.addEventListener('click', ()=>{
       if(passwordInput.value === ADMIN_PASSWORD){

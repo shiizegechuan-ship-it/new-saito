@@ -7,7 +7,7 @@
 <script data-goatcounter="https://oshitemairu.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, viewport-fit=cover">
-<title>ガイドライン | 鴛照昧琉</title>
+<title>FAQ | 鴛照昧琉</title>
 <meta name="description" content="鴛照昧琉のポートフォリオサイト内、作品の著作権・利用に関するガイドラインページです.">
 <meta name="robots" content="index, follow">
 <meta name="theme-color" content="#F6F1E6">
@@ -31,10 +31,17 @@
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;600&family=Zen+Kaku+Gothic+New:wght@400&display=swap" onload="this.onload=null;this.rel='stylesheet'">
 <noscript><link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;600&family=Zen+Kaku+Gothic+New:wght@400&display=swap" rel="stylesheet"></noscript>
 <!-- Firebase(ログイン・お気に入り同期に使用) -->
+<!-- SRI(改ざん防止)対応の準備。本番運用を開始する前に、正しいハッシュ値を
+     計算し、下の3つのmodulepreloadタグに integrity="sha384-..." を追加してください
+     (手順は firebase-sri-setup.md をご覧ください)。ハッシュ値を入れるまでは、
+     modulepreloadだけが効いた状態(読み込みの高速化のみ)になります。 -->
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js" crossorigin="anonymous">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js" crossorigin="anonymous">
+<link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js" crossorigin="anonymous">
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, limit, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
   // ここに、ご自身のFirebaseプロジェクトの設定値を入力してください。
   // (他のページと、同じ値を入れてください。)
@@ -53,7 +60,7 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
     const provider = new GoogleAuthProvider();
-    window.__siteFirebase = { auth, db, provider, signInWithPopup, signOut, onAuthStateChanged, doc, getDoc, setDoc, deleteDoc, collection, getDocs, serverTimestamp, runTransaction, ready:true };
+    window.__siteFirebase = { auth, db, provider, signInWithPopup, signOut, onAuthStateChanged, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, limit, serverTimestamp, runTransaction, ready:true };
   }catch(err){
     console.error('Firebase init failed:', err);
     window.__siteFirebase = { ready:false };
@@ -65,9 +72,31 @@
   // これを通さずに直接HTMLに埋め込むと、悪意のある入力によって任意のコードが実行されてしまう
   // (XSS脆弱性)ため、ユーザーが入力した文字列を表示する場所では、必ず使用すること。
   window.escapeHtml = function(str){
-    const div = document.createElement('div');
-    div.textContent = str == null ? '' : String(str);
-    return div.innerHTML;
+    // 属性値(例:src="...")の中で使っても安全なように、
+    // < > & に加えて、二重引用符・単引用符もすべて実体参照に置き換える。
+    if(str == null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  };
+  // HTML用のescapeHtmlとは、目的も置き場所も別のエスケープ。
+  // onerror="...'ここに値を入れる'..." のように、JavaScriptの文字列リテラルの
+  // 「中」に値を埋め込む場合は、HTMLの記号(< > など)ではなく、その文字列リテラル
+  // 自体を壊せる記号(引用符・バックスラッシュ・改行)を無害化する必要がある。
+  // HTML用のエスケープだけでは、この場所は守れない。
+  window.escapeJsString = function(str){
+    if(str == null) return '';
+    return String(str)
+      .replace(/\\/g, '\\\\')
+      .replace(/'/g, "\\'")
+      .replace(/"/g, '\\"')
+      .replace(/\n/g, '\\n')
+      .replace(/\r/g, '\\r')
+      .replace(/</g, '\\x3C') // 閉じタグ('<'+'/script>'のような形)で、囲っているタグ自体を破壊できないようにする
+      .replace(/>/g, '\\x3E');
   };
 </script>
 <script>
@@ -85,6 +114,19 @@
   };
 </script>
 <style>
+  .network-status-banner{
+    position:fixed; top:0; left:0; right:0; z-index:9999;
+    padding:9px 16px; text-align:center; font-family:var(--f-gothic);
+    font-size:calc(12.5px * var(--font-scale, 1)); letter-spacing:.04em;
+    color:#fff; transform:translateY(-100%); transition:transform .3s ease;
+  }
+  
+  .network-status-banner.show{ transform:translateY(0); }
+  
+  .network-status-banner.offline{ background:var(--bengara); }
+  
+  .network-status-banner.online{ background:#3E6B4F; }
+  
   
   *{ box-sizing:border-box; }
   
@@ -120,6 +162,13 @@
     display:flex; align-items:center; justify-content:space-between;
     padding:calc(22px + env(safe-area-inset-top)) 6vw 22px;
     transition:background-color .5s ease, padding .4s ease, box-shadow .4s ease;
+    /* Safariはアドレスバーが縮む瞬間、position:fixed要素の
+       位置の再計算が一瞬遅れることがあり、その間メニューバーの下側が
+       欠けて見えることがある。独立した合成レイヤーとして扱わせることで、
+       この遅れを防ぐ、Safariで広く知られている対策。 */
+    -webkit-transform:translateZ(0);
+    transform:translateZ(0);
+    will-change:transform;
   }
   
   header.scrolled{
@@ -172,6 +221,7 @@
   
   .settings-row{
     display:flex; align-items:center; justify-content:space-between; gap:14px;
+    flex-wrap:wrap; row-gap:10px;
   }
   
   .settings-row + .settings-row{ margin-top:18px; }
@@ -212,12 +262,18 @@
   
   .bottom-sheet-handle{
     width:40px; height:4px; border-radius:2px; background:var(--line);
-    margin:12px auto 4px;
+    margin:12px auto 4px; position:relative; touch-action:none;
+  }
+  /* 見た目の太さ(4px)はそのままに、実際に指で掴める範囲だけを広げる */
+  .bottom-sheet-handle::before{
+    content:''; position:absolute; left:50%; top:50%;
+    width:120px; height:44px; transform:translate(-50%,-50%);
   }
   
   .bottom-sheet-head{
     display:flex; align-items:center; justify-content:space-between;
     padding:8px 24px 16px; border-bottom:1px solid var(--line);
+    touch-action:none;
   }
   
   .bottom-sheet-head h3{
@@ -229,15 +285,15 @@
   .bottom-sheet-close svg{ width:14px; height:14px; stroke:var(--sumi); }
   
   .rewatch-list{
-    display:flex; gap:16px; overflow-x:auto; padding:20px 24px 28px;
+    display:grid; grid-template-columns:repeat(2,1fr); gap:18px 16px; padding:20px 24px 28px;
   }
   
   .rewatch-item{
-    flex:none; width:130px; cursor:pointer;
+    width:100%; cursor:pointer;
   }
   
   .rewatch-thumb{
-    width:130px; height:130px; border-radius:6px; position:relative; overflow:hidden;
+    width:100%; aspect-ratio:1; border-radius:6px; position:relative; overflow:hidden;
   }
   
   .rewatch-item p{
@@ -265,9 +321,12 @@
   }
   
   .qr-modal img{
-    display:block; margin:0 auto; border-radius:4px;
+    display:block; margin:0 auto; border-radius:6px;
     width:220px; height:220px; object-fit:contain;
-    background:var(--kinari-2); font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi);
+    background:linear-gradient(135deg, var(--ai) 0%, var(--bengara) 100%);
+    padding:14px;
+    box-sizing:border-box;
+    font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi);
   }
   
   .qr-modal-url{
@@ -572,6 +631,25 @@
     width:32px; height:32px; transition:border-color .3s ease, background .3s ease;
   }
   
+  .bgm-controls{ display:flex; align-items:center; gap:6px; }
+  
+  .bgm-nav-btn{
+    width:24px; height:24px; border-radius:50%; border:1px solid var(--line); background:transparent;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; flex:none;
+    transition:border-color .3s ease;
+  }
+  
+  .bgm-nav-btn:hover{ border-color:var(--bengara); }
+  
+  .bgm-nav-btn svg{ width:11px; height:11px; color:var(--sumi); }
+  
+  .bgm-track-name{
+    text-align:right; font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi);
+    margin-top:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  
+  .bgm-track-name:empty{ display:none; }
+  
   .bottom-sheet-close{ width:32px; height:32px; flex:none; }
   
 
@@ -623,6 +701,10 @@
   }
   
   .guideline-a{ font-size:calc(14px * var(--font-scale, 1)); color:var(--usuzumi); line-height:1.95; }
+  
+  #guidelineExistingWorkStatusText, #guidelineRequestStatusText{
+    font-size:calc(14px * var(--font-scale, 1)); color:var(--usuzumi); line-height:1.95; white-space:pre-wrap;
+  }
   
 
   .to-top{
@@ -686,7 +768,7 @@
   .login-account span{ font-size:calc(12px * var(--font-scale, 1)); color:var(--sumi); max-width:110px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   
   /* Bookmarks:見たもの/実績 タブ */
-  .bookmark-tabs{ display:flex; gap:10px; padding:16px 24px 0; flex:none; }
+  .bookmark-tabs{ display:flex; gap:10px; padding:16px 24px 14px; flex:none; }
   
   .bookmark-tab{
     font-family:var(--f-gothic); font-size:calc(12.5px * var(--font-scale, 1)); letter-spacing:.04em;
@@ -696,7 +778,22 @@
   
   .bookmark-tab.active{ background:var(--bengara); border-color:var(--bengara); color:var(--kinari); }
   
-  .bookmark-panel{ overflow-y:auto; }
+  .guidelines-tabs{ display:flex; gap:10px; margin-bottom:36px; }
+  
+  .guidelines-tab{
+    font-family:var(--f-gothic); font-size:calc(12.5px * var(--font-scale, 1)); letter-spacing:.04em;
+    color:var(--usuzumi); background:transparent; border:1px solid var(--line); border-radius:16px;
+    padding:7px 20px; cursor:pointer; transition:border-color .3s ease, color .3s ease, background .3s ease;
+  }
+  
+  .guidelines-tab.active{ background:var(--bengara); border-color:var(--bengara); color:var(--kinari); }
+  
+  .guidelines-subtitle{
+    font-family:var(--f-mincho); font-size:calc(11.5px * var(--font-scale, 1)); letter-spacing:.25em;
+    color:var(--usuzumi); margin-bottom:20px;
+  }
+  
+  .bookmark-panel{ overflow-y:auto; flex:1; min-height:0; -webkit-overflow-scrolling:touch; }
   
   .bookmark-panel[hidden]{ display:none; }
   
@@ -883,6 +980,7 @@
 </style>
 </head>
 <body>
+<div class="network-status-banner" id="networkStatusBanner" hidden></div>
 <script>
   // 同じブラウザであれば、以前選んだダーク/ライトの状態を引き継ぐ。
   try{
@@ -891,6 +989,35 @@
   }catch(e){
     document.documentElement.setAttribute('data-site-theme', 'light');
   }
+</script>
+<script>
+  // 通信が切れた時に、それとなく知らせる。投稿・いいねなどをしようとした瞬間に、
+  // 原因不明のエラーに見えてしまうのを防ぐための、控えめな配慮。
+  (function(){
+    const banner = document.getElementById('networkStatusBanner');
+    if(!banner) return;
+    let hideTimer = null;
+    function showOffline(){
+      clearTimeout(hideTimer);
+      banner.textContent = '通信が切れているようです。投稿やいいねなどの操作ができない場合があります。';
+      banner.className = 'network-status-banner offline show';
+      banner.hidden = false;
+    }
+    function showOnlineBriefly(){
+      clearTimeout(hideTimer);
+      banner.textContent = '通信が回復しました。';
+      banner.className = 'network-status-banner online show';
+      banner.hidden = false;
+      hideTimer = setTimeout(()=>{
+        banner.classList.remove('show');
+        setTimeout(()=>{ banner.hidden = true; }, 300);
+      }, 2500);
+    }
+    window.addEventListener('offline', showOffline);
+    window.addEventListener('online', showOnlineBriefly);
+    // ページを開いた時点で、既にオフラインだった場合にも対応する。
+    if(!navigator.onLine) showOffline();
+  })();
 </script>
 
 <header id="siteHeader">
@@ -910,9 +1037,8 @@
         </li>
         <li><a href="index.html#profile">Profile<span class="nav-jp">-経歴-</span></a></li>
         <li><a href="index.html#contact">Contact<span class="nav-jp">-連絡先-</span></a></li>
-        <li><a href="faq.html">FAQ<span class="nav-jp">-よくある質問-</span></a></li>
-        <li><a href="fanart.html">Fan Art<span class="nav-jp">-ファンアート-</span></a></li>
-        <li><a href="guidelines.html" aria-current="page">Guidelines<span class="nav-jp">-ガイドライン-</span></a></li>
+        <li><a href="fanart.html">Platform<span class="nav-jp">-ツイート-</span></a></li>
+        <li><a href="faq.html" aria-current="page">FAQ<span class="nav-jp">-よくある質問-</span></a></li>
         <li><a href="#" id="navRewatch">Bookmarks<span class="nav-jp">-しおり-</span></a></li>
         <li><a href="#" id="navQr">QR Code<span class="nav-jp">-二次元コード-</span></a></li>
       </ul>
@@ -977,18 +1103,24 @@
     </div>
     <div class="settings-row">
       <span class="settings-row-label">BGM</span>
-      <button class="bgm-toggle" id="bgmToggle" aria-label="BGMを再生" aria-pressed="false">
-        <svg class="bgm-icon-play" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14l11-7z"/></svg>
-        <svg class="bgm-icon-pause" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M7 5v14M17 5v14"/></svg>
-      </button>
+      <div class="bgm-controls">
+        <button class="bgm-nav-btn" id="bgmPrevBtn" aria-label="前の曲">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zM18 6v12l-9-6z"/></svg>
+        </button>
+        <button class="bgm-toggle" id="bgmToggle" aria-label="BGMを再生" aria-pressed="false">
+          <svg class="bgm-icon-play" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5v14l11-7z"/></svg>
+          <svg class="bgm-icon-pause" viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" hidden><path d="M7 5v14M17 5v14"/></svg>
+        </button>
+        <button class="bgm-nav-btn" id="bgmNextBtn" aria-label="次の曲">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 6v12l9-6z"/></svg>
+        </button>
+      </div>
     </div>
-    <audio id="bgmAudio" loop preload="none">
-      <!-- 実際のBGMファイルが用意できたら、下記のsrcを差し替えてください -->
-      <source src="REPLACE_WITH_YOUR_BGM_FILE.mp3" type="audio/mpeg">
-    </audio>
+    <p class="bgm-track-name" id="bgmTrackName"></p>
+    <audio id="bgmAudio" preload="none"></audio>
   </div>
   <div class="site-search-panel" id="siteSearchPanel" hidden>
-    <input type="search" id="siteSearchInput" class="site-search-input" placeholder="サイト内を検索..." aria-label="サイト内検索">
+    <input type="search" id="siteSearchInput" class="site-search-input" maxlength="20" placeholder="サイト内を検索..." aria-label="サイト内検索">
     <ul class="site-search-results" id="siteSearchResults"></ul>
     <p class="site-search-empty" id="siteSearchEmpty" hidden>一致する内容が見つかりませんでした。</p>
   </div>
@@ -1025,7 +1157,7 @@
     </button>
   </div>
   <div class="bookmark-tabs">
-    <button type="button" class="bookmark-tab active" data-bmtab="viewed">見たもの一覧</button>
+    <button type="button" class="bookmark-tab active" data-bmtab="viewed">閲覧履歴</button>
     <button type="button" class="bookmark-tab" data-bmtab="achievements">実績一覧</button>
   </div>
 
@@ -1065,50 +1197,86 @@
 </div>
 
 <main id="topAnchor">
-  <section id="guidelines" style="padding-top:170px;">
+  <section id="faq" style="padding-top:170px;">
     <div class="wrap">
       <div class="sec-head reveal">
-        <div class="sec-label i18n" data-en="Guidelines">ガ イ ド ラ イ ン</div>
+        <div class="sec-label i18n" data-en="FAQ">よ く あ る 質 問</div>
         <div>
-          <h2 class="i18n" data-en="Guidelines">ガイドライン</h2>
-          <p class="i18n" data-en="Guidelines regarding the copyright and use of works published on this site.">このサイトで発表している作品の、著作権・ご利用に関するガイドラインです。</p>
+          <h2 class="i18n" data-en="FAQ">FAQ</h2>
+          <p class="i18n" data-en="Guidelines regarding the use of works on this site, and common questions about commissions.">このサイトの作品のご利用に関するガイドラインと、ご依頼に関するよくある質問です。</p>
         </div>
       </div>
 
-      <div class="guideline-list">
-        <div class="guideline-item reveal">
-          <p class="guideline-q i18n" data-en="Copyright">著作権について</p>
-          <p class="guideline-a i18n" data-en="The copyright of all works published on this site (illustrations, music, text, etc.) belongs to the creator, 鴛照昧琉. Reproduction, redistribution, or claiming a work as your own without permission is not allowed.">
-            このサイトで発表しているすべての創作物(イラスト・曲・文章など)の著作権は、作者である鴛照昧琉に帰属します。無断での複製・再配布・自作発言などはご遠慮ください。
-          </p>
-        </div>
+      <div class="guidelines-tabs reveal">
+        <button type="button" class="guidelines-tab active" data-gltab="site">サイト内</button>
+        <button type="button" class="guidelines-tab" data-gltab="request">ご依頼</button>
+      </div>
 
-        <div class="guideline-item reveal">
-          <p class="guideline-q i18n" data-en="Personal enjoyment / fan works">個人でのご利用・二次創作について</p>
-          <p class="guideline-a i18n" data-en="Saving images for personal enjoyment, and fan art / derivative works based on published works, are welcome. Please keep any such use within the bounds of public decency.">
-            作品を個人的に保存して楽しんでいただくことや、公開している作品をもとにしたファンアート・二次創作は歓迎しています。公序良俗に反しない範囲で、楽しくご利用ください。
-          </p>
-        </div>
+      <div class="guidelines-panel" id="guidelinesSite">
+        <p class="guidelines-subtitle i18n" data-en="Guidelines">ガイドライン</p>
+        <div class="guideline-list">
+          <div class="guideline-item reveal">
+            <p class="guideline-q i18n" data-en="Copyright">著作権について</p>
+            <p class="guideline-a i18n" data-en="The copyright of all works published on this site (illustrations, music, text, etc.) belongs to the creator, 鴛照昧琉. Reproduction, redistribution, or claiming a work as your own without permission is not allowed.">
+              このサイトで発表しているすべての創作物(イラスト・曲・文章など)の著作権は、作者である鴛照昧琉に帰属します。無断での複製・再配布・自作発言などはご遠慮ください。
+            </p>
+          </div>
 
-        <div class="guideline-item reveal">
-          <p class="guideline-q i18n" data-en="Streaming" >配信でのご利用について</p>
-          <p class="guideline-a i18n" data-en="When using a work in a video or live stream, crediting the creator's name is required. Games may be streamed without prior confirmation. For any other creative work (illustrations, music, etc.), please contact me by email in advance, and only use it after receiving permission.">
-            動画や配信の中で作品をご利用いただく際は、作者名の記載を必須とさせていただきます。無断での配信が可能なのはゲームのみです。それ以外の創作物(イラスト・曲など)については、事前に必ずメールにてご確認いただき、許可を得た上でご使用ください。
-          </p>
-        </div>
+          <div class="guideline-item reveal">
+            <p class="guideline-q i18n" data-en="Personal enjoyment / fan works">個人でのご利用・二次創作について</p>
+            <p class="guideline-a i18n" data-en="Saving images for personal enjoyment, and fan art / derivative works based on published works, are welcome. Please keep any such use within the bounds of public decency.">
+              作品を個人的に保存して楽しんでいただくことや、公開している作品をもとにしたファンアート・二次創作は歓迎しています。公序良俗に反しない範囲で、楽しくご利用ください。
+            </p>
+          </div>
 
-        <div class="guideline-item reveal">
-          <p class="guideline-q i18n" data-en="Commercial use">商用利用について</p>
-          <p class="guideline-a i18n" data-en="If you wish to use a work for commercial purposes, please contact me by email in advance. Details such as fees will be discussed individually depending on the intended use.">
-            作品を商用目的でご利用になりたい場合は、事前に必ずメールにてご確認をお願いいたします。金額などの詳細は、ご利用内容に応じて個別にご相談させていただきます。
-          </p>
-        </div>
+          <div class="guideline-item reveal">
+            <p class="guideline-q i18n" data-en="AI training">AI学習について</p>
+            <p class="guideline-a i18n" data-en="Using any work published on this site (illustrations, music, text, and any works submitted to Platform) as training data for AI is strictly prohibited, regardless of purpose.">
+              このサイトで発表しているすべての創作物(イラスト・曲・文章、およびPlatformに投稿された作品)を、AIの学習データとして利用することは、目的を問わず固くお断りいたします。
+            </p>
+          </div>
 
-        <div class="guideline-item reveal">
-          <p class="guideline-q i18n" data-en="A note">最後に</p>
-          <p class="guideline-a i18n" data-en="These guidelines may be revised as needed. If you have any questions about how you'd like to use a work, please feel free to reach out by email — I'm happy to talk it through.">
-            このガイドラインは、必要に応じて内容を見直すことがあります。ご利用にあたって不明な点があれば、遠慮なくメールでお問い合わせください。
-          </p>
+          <div class="guideline-item reveal">
+            <p class="guideline-q i18n" data-en="Our commitment regarding Platform submissions">Platformへの投稿作品について(運営者としての約束)</p>
+            <p class="guideline-a i18n" data-en="This site's administrator will never, now or in the future, use any work submitted to Platform by visitors as training data for AI. This is a permanent commitment.">
+              Platformに投稿していただいた作品について、このサイトの運営者は、現在および将来にわたって、AIの学習データとして利用することは一切ありません。これは恒久的な約束です。
+            </p>
+          </div>
+
+          <div class="guideline-item reveal">
+            <p class="guideline-q i18n" data-en="A note">最後に</p>
+            <p class="guideline-a i18n" data-en="These guidelines may be revised as needed. If you have any questions about how you'd like to use a work, please feel free to reach out by email — I'm happy to talk it through.">
+              このガイドラインは、必要に応じて内容を見直すことがあります。ご利用にあたって不明な点があれば、遠慮なくメールでお問い合わせください。
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div class="guidelines-panel" id="guidelinesRequest" hidden>
+        <div class="guideline-list">
+          <div class="guideline-item reveal">
+            <p class="guideline-q i18n" data-en="Streaming" >配信でのご利用について</p>
+            <p class="guideline-a i18n" data-en="When using a work in a video or live stream, crediting the creator's name is required. Games may be streamed without prior confirmation. For any other creative work (illustrations, music, etc.), please contact me by email in advance, and only use it after receiving permission.">
+              動画や配信の中で作品をご利用いただく際は、作者名の記載を必須とさせていただきます。無断での配信が可能なのはゲームのみです。それ以外の創作物(イラスト・曲など)については、事前に必ずメールにてご確認いただき、許可を得た上でご使用ください。
+            </p>
+          </div>
+
+          <div class="guideline-item reveal">
+            <p class="guideline-q i18n" data-en="Commercial use of existing works">既存作品の有償利用について</p>
+            <p id="guidelineExistingWorkStatusText">現在は、既存作品の有償利用を受け付けておりません。</p>
+          </div>
+
+          <div class="guideline-item reveal">
+            <p class="guideline-q i18n" data-en="Custom (order-made) commissions">オーダーメイドのご依頼について</p>
+            <p id="guidelineRequestStatusText">現在は、オーダーメイドのご依頼を受け付けておりません。</p>
+          </div>
+
+          <div class="guideline-item reveal">
+            <p class="guideline-q i18n" data-en="A note">最後に</p>
+            <p class="guideline-a i18n" data-en="These guidelines may be revised as needed. If you have any questions about how you'd like to use a work, please feel free to reach out by email — I'm happy to talk it through.">
+              このガイドラインは、必要に応じて内容を見直すことがあります。ご利用にあたって不明な点があれば、遠慮なくメールでお問い合わせください。
+            </p>
+          </div>
         </div>
       </div>
 
@@ -1663,39 +1831,101 @@
       return ratio >= 0.5 ? Math.round(ratio * 100) : 0;
     }
 
-    const siteIndex = [
-      { section:'Home', sectionEn:'Home', anchor:'index.html#top', external:true,
-        textJa:'手を動かし、静けさを、かたちに。季節がひとつ過ぎるあいだに、ひとつ何かをつくる。急がずに、けれど手を止めずに。',
-        textEn:'Making things by hand, giving shape to quiet. One thing made, each time a season passes.' },
-      { section:'作品', sectionEn:'Works', anchor:'index.html#works', external:true,
-        textJa:'illustration 作品 遠い部屋 灯りをともす 雨のあと 手紙 夜のかたち 庭の記録 イラスト 工芸 写真 文章',
-        textEn:'illustration works craft photography text' },
-      { section:'プロフィール', sectionEn:'Profile', anchor:'index.html#profile', external:true,
-        textJa:'鴛照昧琉 おしてまいる プロフィール 会社員として働くかたわら、休日に絵と文章をつくっています。手のひらに収まる小さな発見。紙と鉛筆、デジタルと工芸。',
-        textEn:'Oshitemairu profile office employee illustrations writing craft digital' },
-      { section:'お問い合わせ', sectionEn:'Contact', anchor:'index.html#contact', external:true,
-        textJa:'お問い合わせ お仕事のご相談 展示のご案内 メールを送る',
-        textEn:'Contact work inquiries exhibitions send an email' },
-      { section:'FAQ', sectionEn:'FAQ', anchor:'#faq',
-        textJa:'ご依頼について よくある質問 ご依頼の流れ 金額の目安 5000円 20000円 納期 2〜4週間 ヒアリング ラフ提出 修正 納品',
-        textEn:'FAQ commission process price range delivery weeks rough sketch revisions' }
-    ];
+    // 日本語で検索しても、サイト内の英語表記(カテゴリ名やページ名)に
+    // ちゃんとヒットするようにするための、簡単な対訳辞書。
+    // 「キー」が英語表記、値の配列がその日本語の言い換え。
+    const SEARCH_SYNONYMS = {
+      'illustration': ['イラスト', 'イラストレーション', '絵'],
+      'music': ['音楽', '楽曲', '曲'],
+      'photography': ['写真', 'フォト', 'フォトグラフィー'],
+      'text': ['文章', 'テキスト'],
+      'novel': ['小説', '物語'],
+      'movie': ['映像', '動画', 'ムービー', '映画'],
+      'profile': ['プロフィール', '経歴'],
+      'contact': ['連絡先', 'お問い合わせ', 'コンタクト'],
+      'faq': ['よくある質問'],
+      'fan art': ['ファンアート'],
+      'guidelines': ['ガイドライン', '利用規約'],
+      'bookmarks': ['しおり', 'ブックマーク'],
+      'qr code': ['二次元コード', 'キューアール'],
+      'home': ['ホーム', 'トップ'],
+      'works': ['作品']
+    };
+    function jaSynonymsFor(enWord){
+      const list = SEARCH_SYNONYMS[String(enWord || '').toLowerCase()];
+      return list ? list.join(' ') : '';
+    }
+
+    function buildSiteIndex(){
+      const index = [
+        { section:'Home', sectionEn:'Home', anchor:'index.html#top', external:true,
+          textJa:'手を動かし、静けさを、かたちに。季節がひとつ過ぎるあいだに、ひとつ何かをつくる。急がずに、けれど手を止めずに。 ホーム トップ',
+          textEn:'Making things by hand, giving shape to quiet. One thing made, each time a season passes. Unhurried, yet never still. Home' },
+        { section:'プロフィール', sectionEn:'Profile', anchor:'index.html#profile', external:true,
+          textJa:'鴛照昧琉 おしてまいる 会社員として働くかたわら、休日に絵と文章をつくっています。大きなものより、手のひらに収まる小さな発見を集めることが好きです。紙と鉛筆から始まり、いまはデジタルと工芸のあいだを行き来しながら制作しています。私家版の作品集です。 プロフィール 経歴',
+          textEn:'Oshitemairu. Works as an office employee, makes illustrations and writing on days off. Drawn to small discoveries. Started with paper and pencil, now moves between digital work and craft. Profile' },
+        { section:'作品', sectionEn:'Works', anchor:'index.html#works', external:true,
+          textJa:'作品 イラスト 音楽 楽曲 小説 一覧',
+          textEn:'Works Illustration Music gallery' },
+        { section:'お問い合わせ', sectionEn:'Contact', anchor:'index.html#contact', external:true,
+          textJa:'お問い合わせ お仕事のご相談 展示のご案内 メールを送る oshitemail55@gmail.com 連絡先',
+          textEn:'Contact work inquiries exhibitions send an email' },
+
+        { section:'ファンアート', sectionEn:'Fan Art', anchor:'fanart.html#fanart', external:true,
+          textJa:'ファンアート みなさんが描いてくださった作品を紹介するページ 投稿',
+          textEn:'Fan Art submissions from visitors' },
+        { section:'FAQ', sectionEn:'FAQ', anchor:'#faq', external:false,
+          textJa:'FAQ よくある質問 ガイドライン 著作権 利用規約 二次創作について ご依頼について ご依頼の流れ 金額の目安 5000円 20000円 納期 2〜4週間 ヒアリング ラフ提出 修正 納品',
+          textEn:'FAQ guidelines copyright terms of use commission process price range 2 to 4 weeks rough sketch revisions delivery' },
+        { section:'Music', sectionEn:'Music', anchor:'music.html#music', external:true,
+          textJa:'音楽 楽曲 作曲した曲を紹介するページ',
+          textEn:'Music original tracks I have composed' },
+        { section:'Novel', sectionEn:'Novel', anchor:'novel.html#novel', external:true,
+          textJa:'小説 掌編 書いた物語を紹介するページ',
+          textEn:'Novel short stories and pieces of writing' },
+        { section:'Movie', sectionEn:'Movie', anchor:'movie.html#movie', external:true,
+          textJa:'映像 動画 制作した映像作品を紹介するページ',
+          textEn:'Movie video works I have created' },
+      ];
+      return index;
+    }
+    const siteIndex = buildSiteIndex();
 
     function snippetFor(entry){
       const text = isEnglish() ? entry.textEn : entry.textJa;
       return text.length > 34 ? text.slice(0, 34) + '…' : text;
     }
 
+    // クエリが辞書に載っている語(英語・日本語どちらでも)と一致・部分一致したら、
+    // その言い換え(対訳)もすべて検索候補に加える。
+    function expandQuery(q){
+      const variants = new Set([q]);
+      Object.keys(SEARCH_SYNONYMS).forEach(enWord=>{
+        const jaWords = SEARCH_SYNONYMS[enWord];
+        const allWords = [enWord, ...jaWords];
+        const matched = allWords.some(w => w.toLowerCase() === q || q.includes(w.toLowerCase()) || w.toLowerCase().includes(q));
+        if(matched){
+          allWords.forEach(w => variants.add(w.toLowerCase()));
+        }
+      });
+      return Array.from(variants);
+    }
+
+    // 「いかにもコードのような文字列」での検索は、結果を出さずに弾く
+    // (表示側はescapeHtmlで無害化済みだが、そもそも検索自体させない追加の防御層)。
     function renderResults(query){
+      query = query.slice(0, 20); // 念のため、こちらでも文字数を20字までに制限する
       siteSearchResults.innerHTML = '';
-      if(query === ''){
+      if(query === '' || (typeof window.containsCodeLikeContent === 'function' && window.containsCodeLikeContent(query))){
         siteSearchEmpty.hidden = true;
         return;
       }
       const q = query.toLowerCase();
+      const queryVariants = expandQuery(q);
       const scored = siteIndex.map(entry=>{
         const haystack = (entry.textJa + ' ' + entry.textEn).toLowerCase();
-        return { entry, score: fuzzyScore(q, haystack) };
+        const bestScore = Math.max(...queryVariants.map(v => fuzzyScore(v, haystack)));
+        return { entry, score: bestScore };
       }).filter(x => x.score > 0);
       scored.sort((a,b)=> b.score - a.score);
       const matches = scored.slice(0, 8).map(x => x.entry);
@@ -1705,7 +1935,7 @@
         const li = document.createElement('li');
         const a = document.createElement('a');
         a.href = entry.anchor;
-        a.innerHTML = `<span class="site-search-result-section">${isEnglish() ? entry.sectionEn : entry.section}</span><span class="site-search-result-snippet">${snippetFor(entry)}</span>`;
+        a.innerHTML = `<span class="site-search-result-section">${escapeHtml(isEnglish() ? entry.sectionEn : entry.section)}</span><span class="site-search-result-snippet">${escapeHtml(snippetFor(entry))}</span>`;
         a.addEventListener('click', (e)=>{
           e.preventDefault();
           searchPanelCtl.close();
@@ -1742,6 +1972,72 @@
   }catch(err){ console.error('settings panel init failed:', err); }
 
   try{
+    // 「サイト内」「ご依頼」の切り替え。
+    const glTabs = document.querySelectorAll('.guidelines-tab');
+    const glPanels = { site: document.getElementById('guidelinesSite'), request: document.getElementById('guidelinesRequest') };
+    glTabs.forEach(tab=>{
+      tab.addEventListener('click', ()=>{
+        const target = tab.dataset.gltab;
+        glTabs.forEach(t=> t.classList.toggle('active', t === tab));
+        Object.keys(glPanels).forEach(key=>{
+          glPanels[key].hidden = (key !== target);
+        });
+      });
+    });
+  }catch(err){ console.error('guidelines tab init failed:', err); }
+
+  try{
+    // 管理画面(ご依頼設定)で設定した内容を読み込み、「ご依頼」タブの
+    // 該当箇所に反映する。読み込みに失敗した場合や、まだ設定されていない
+    // 場合は、もともとのHTMLに書かれている文言のまま表示する。
+    async function loadStatusText(docId, elementId, closedMessage){
+      const fb = window.__siteFirebase;
+      const el = document.getElementById(elementId);
+      if(!fb || !fb.ready || !el) return;
+      try{
+        const snap = await fb.getDoc(fb.doc(fb.db, 'siteConfig', docId));
+        if(!snap.exists()) return; // 未設定の間は、HTMLに書かれている「受付不可」のままにしておく
+        const data = snap.data();
+        if(data.accepting === false){
+          el.textContent = closedMessage;
+        }else if(data.text){
+          el.textContent = data.text.trim();
+        }
+      }catch(err){ console.error('load status text failed (' + docId + '):', err); }
+    }
+    function loadAllRequestStatusText(){
+      loadStatusText('existingWorkStatus', 'guidelineExistingWorkStatusText', '現在は、既存作品の有償利用を受け付けておりません。');
+      loadStatusText('requestStatus', 'guidelineRequestStatusText', '現在は、オーダーメイドのご依頼を受け付けておりません。');
+    }
+    if(window.__siteFirebase && window.__siteFirebase.ready !== undefined){
+      loadAllRequestStatusText();
+    }else{
+      document.addEventListener('site-firebase-ready', loadAllRequestStatusText, { once:true });
+    }
+  }catch(err){ console.error('request status display init failed:', err); }
+
+  try{
+    // ファンアート由来の画像URLを表示する直前に必ず通す、簡易版の安全確認。
+    // (自分の作品は、admin.html経由の信頼できるデータなので対象外。)
+    const ALLOWED_MEDIA_HOSTS = [
+      'twitter.com', 'x.com', 'pbs.twimg.com', 'video.twimg.com',
+      'youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be', 'img.youtube.com',
+      'pixiv.net', 'www.pixiv.net', 'i.pximg.net'
+    ];
+    const BLOCKED_URL_EXTENSIONS = /\.(svg|html?|xhtml|js|mjs|php|exe|scr|bat|cmd|jar|apk|dmg|msi|sh|ps1)(\?.*)?$/i;
+    const MAX_MEDIA_URL_LENGTH = 200;
+    window.isAllowedMediaUrl = function(rawUrl){
+      if(typeof rawUrl !== 'string' || rawUrl.length > MAX_MEDIA_URL_LENGTH) return false;
+      let u;
+      try{ u = new URL(rawUrl); }catch(e){ return false; }
+      if(u.protocol !== 'https:') return false;
+      const host = u.hostname.toLowerCase();
+      const hostOk = ALLOWED_MEDIA_HOSTS.some(allowed => host === allowed || host.endsWith('.' + allowed));
+      if(!hostOk) return false;
+      if(BLOCKED_URL_EXTENSIONS.test(u.pathname)) return false;
+      return true;
+    };
+
     const REWATCH_KEY = 'portfolio-rewatch-history';
     function getRewatchHistory(){
       try{ return JSON.parse(localStorage.getItem(REWATCH_KEY) || '[]'); }catch(e){ return []; }
@@ -1761,9 +2057,12 @@
         const item = document.createElement('div');
         item.className = 'rewatch-item';
         const fallbackColor = entry.color || 'linear-gradient(150deg,#726B5E,#4A453B)';
-        const media = entry.img
-          ? `<img src="${entry.img}" alt="${title}" style="width:100%;height:100%;object-fit:cover;" onerror="this.outerHTML='<div style=&quot;position:absolute;inset:0;background:${fallbackColor}&quot;></div>'">`
-          : `<div style="position:absolute;inset:0;background:${fallbackColor}"></div>`;
+        // fanart由来の画像だけ、表示の直前にもう一度URLの安全確認をする
+        // (自分の作品は、admin.html経由の信頼できるデータなので対象外)。
+        const imgIsSafe = entry.img && (entry.type !== 'fanart' || window.isAllowedMediaUrl(entry.img));
+        const media = imgIsSafe
+          ? `<img src="${escapeHtml(entry.img)}" alt="${escapeHtml(title)}" style="width:100%;height:100%;object-fit:cover;" loading="lazy" decoding="async" onerror="this.outerHTML='<div style=&quot;position:absolute;inset:0;background:${window.escapeJsString(fallbackColor)}&quot;></div>'">`
+          : `<div style="position:absolute;inset:0;background:${escapeHtml(fallbackColor)}"></div>`;
         item.innerHTML = `<div class="rewatch-thumb">${media}</div><p>${escapeHtml(title)}</p>`;
         item.addEventListener('click', ()=>{
           window.location.href = entry.type === 'fanart' ? 'fanart.html' : 'index.html#works';
@@ -1772,8 +2071,80 @@
       });
     }
     const rewatchCtl = bindSheetModal(rewatchBackdrop, rewatchSheet, 400, renderRewatchList);
-    navRewatch.addEventListener('click', (e)=>{ e.preventDefault(); rewatchCtl.open(); });
+    navRewatch.addEventListener('click', (e)=>{
+      e.preventDefault();
+      rewatchSheet.style.maxHeight = '';
+      rewatchSheet.style.height = '';
+      rewatchCtl.open();
+    });
     document.getElementById('rewatchClose').addEventListener('click', rewatchCtl.close);
+
+    // ハンドル部分(上部のつまみ)を指・マウスでドラッグして、シートの高さを
+    // 上下に自由に調整できるようにする。上に引っ張れば大きく、下に引っ張れば
+    // 小さくなり、さらに大きく下へ引っ張ると、そのまま閉じる。
+    (function(){
+      const handle = rewatchSheet.querySelector('.bottom-sheet-handle');
+      const head = rewatchSheet.querySelector('.bottom-sheet-head');
+      if(!handle) return;
+      const MIN_HEIGHT_VH = 40;
+      const MAX_HEIGHT_VH = 92;
+      const DEFAULT_HEIGHT_VH = 70;
+      const CLOSE_THRESHOLD_VH = 22; // これ以上下に引っ張ったら閉じる
+      let startY = 0;
+      let currentY = 0;
+      let baseHeightVh = DEFAULT_HEIGHT_VH;
+      let dragging = false;
+      function currentHeightVh(){
+        const rect = rewatchSheet.getBoundingClientRect();
+        return (rect.height / window.innerHeight) * 100;
+      }
+      function onStart(clientY){
+        dragging = true;
+        startY = clientY;
+        currentY = clientY;
+        baseHeightVh = currentHeightVh();
+        rewatchSheet.style.transition = 'none';
+      }
+      function onMove(clientY){
+        if(!dragging) return;
+        currentY = clientY;
+        const deltaVh = ((startY - currentY) / window.innerHeight) * 100; // 上へ引っ張ると正の値
+        const newHeightVh = Math.max(MIN_HEIGHT_VH, Math.min(MAX_HEIGHT_VH, baseHeightVh + deltaVh));
+        rewatchSheet.style.maxHeight = newHeightVh + 'vh';
+        rewatchSheet.style.height = newHeightVh + 'vh';
+      }
+      function onEnd(){
+        if(!dragging) return;
+        dragging = false;
+        rewatchSheet.style.transition = '';
+        const deltaVh = ((startY - currentY) / window.innerHeight) * 100;
+        if(deltaVh < -CLOSE_THRESHOLD_VH){
+          rewatchCtl.close();
+        }
+      }
+      handle.addEventListener('touchstart', (e)=> onStart(e.touches[0].clientY), { passive:true });
+      handle.addEventListener('touchmove', (e)=> onMove(e.touches[0].clientY), { passive:true });
+      handle.addEventListener('touchend', onEnd);
+      handle.addEventListener('mousedown', (e)=>{ onStart(e.clientY); e.preventDefault(); });
+      // 上辺(タイトル部分)からも、同じようにドラッグで動かせるようにする。
+      // ただし、閉じるボタンの上から始めた場合は、ドラッグとして扱わない
+      // (ボタンのクリックが、正しく機能しなくなるのを防ぐため)。
+      if(head){
+        head.addEventListener('touchstart', (e)=>{
+          if(e.target.closest('#rewatchClose')) return;
+          onStart(e.touches[0].clientY);
+        }, { passive:true });
+        head.addEventListener('touchmove', (e)=> onMove(e.touches[0].clientY), { passive:true });
+        head.addEventListener('touchend', onEnd);
+        head.addEventListener('mousedown', (e)=>{
+          if(e.target.closest('#rewatchClose')) return;
+          onStart(e.clientY);
+          e.preventDefault();
+        });
+      }
+      document.addEventListener('mousemove', (e)=>{ if(dragging) onMove(e.clientY); });
+      document.addEventListener('mouseup', onEnd);
+    })();
 
     // --- 実績一覧の表示 ---
     const achLoginNote = document.getElementById('achievementsLoginNote');
@@ -1837,10 +2208,21 @@
     const qrBackdrop = document.getElementById('qrBackdrop');
     const qrModal = document.getElementById('qrModal');
     const navQr = document.getElementById('navQr');
+    // 前景を墨色、背景を生成り色にすることで、和の色味を保ちつつ、
+    // 通常の白黒QRコードと同じくらいの高いコントラストを確保している(読み取りやすさ優先)。
+    // 色そのものはテーマ(ライト/ダーク)に関わらず、常にこの2色で固定。
+    function qrImageUrl(url){
+      return 'https://api.qrserver.com/v1/create-qr-code/?size=192x192'
+        + '&color=221F1B&bgcolor=F6F1E6'
+        + '&data=' + encodeURIComponent(url);
+    }
+    const qrUrl = location.origin + location.pathname;
+    // モーダルを開く前に、あらかじめ画像を読み込んでおく(プリロード)。
+    const qrPreload = new Image();
+    qrPreload.src = qrImageUrl(qrUrl);
     function fillQrContent(){
-      const url = location.origin + location.pathname;
-      document.getElementById('qrImage').src = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(url);
-      document.getElementById('qrUrlText').textContent = url;
+      document.getElementById('qrImage').src = qrImageUrl(qrUrl);
+      document.getElementById('qrUrlText').textContent = qrUrl;
     }
     const qrCtl = bindSheetModal(qrBackdrop, qrModal, 300, fillQrContent);
     navQr.addEventListener('click', (e)=>{ e.preventDefault(); qrCtl.open(); });
@@ -1848,29 +2230,73 @@
   }catch(err){ console.error('qr init failed:', err); }
 
   try{
+    // Musicページで公開している曲と同じ内容。曲を増やす時は、Musicページの
+    // 曲一覧に追加するのに合わせて、ここにも同じ形で1行追加してください。
+    const BGM_TRACKS = [
+      { title:'灯りをともす', src:'' },
+      { title:'庭の記録', src:'' }
+    ];
+
     const bgmToggle = document.getElementById('bgmToggle');
+    const bgmPrevBtn = document.getElementById('bgmPrevBtn');
+    const bgmNextBtn = document.getElementById('bgmNextBtn');
     const bgmAudio = document.getElementById('bgmAudio');
+    const bgmTrackName = document.getElementById('bgmTrackName');
+    const playIcon = bgmToggle.querySelector('.bgm-icon-play');
+    const pauseIcon = bgmToggle.querySelector('.bgm-icon-pause');
     let bgmClickCount = 0;
+    let bgmIndex = 0;
+    let bgmLoaded = false;
+
+    function setPlayingUi(playing){
+      bgmToggle.setAttribute('aria-pressed', String(playing));
+      bgmToggle.setAttribute('aria-label', playing ? 'BGMを停止' : 'BGMを再生');
+      playIcon.hidden = playing;
+      pauseIcon.hidden = !playing;
+    }
+
+    function loadBgmTrack(index, keepPlaying){
+      const total = BGM_TRACKS.length;
+      bgmIndex = ((index % total) + total) % total;
+      const track = BGM_TRACKS[bgmIndex];
+      bgmAudio.src = track.src || '';
+      bgmTrackName.textContent = track.title || '';
+      bgmLoaded = true;
+      if(keepPlaying && track.src){
+        bgmAudio.play().catch(()=>{});
+      }
+    }
+
     bgmToggle.addEventListener('click', ()=>{
       bgmClickCount++;
       if(bgmClickCount >= 10 && typeof AchievementModule !== 'undefined' && AchievementModule.isLoggedIn()){
         AchievementModule.unlock('bgm-mania');
       }
-      const playing = bgmToggle.getAttribute('aria-pressed') === 'true';
-      if(playing){
-        bgmAudio.pause();
-        bgmToggle.setAttribute('aria-pressed', 'false');
-        bgmToggle.setAttribute('aria-label', 'BGMを再生');
-        bgmToggle.querySelector('.bgm-icon-play').hidden = false;
-        bgmToggle.querySelector('.bgm-icon-pause').hidden = true;
+      if(!bgmLoaded) loadBgmTrack(0, false);
+      if(bgmAudio.paused){
+        bgmAudio.play().catch(()=>{
+          console.warn('BGM再生に失敗しました。音声ファイルが未設定の可能性があります。');
+        });
+        setPlayingUi(true);
       }else{
-        bgmAudio.play().catch(()=>{});
-        bgmToggle.setAttribute('aria-pressed', 'true');
-        bgmToggle.setAttribute('aria-label', 'BGMを停止');
-        bgmToggle.querySelector('.bgm-icon-play').hidden = true;
-        bgmToggle.querySelector('.bgm-icon-pause').hidden = false;
+        bgmAudio.pause();
+        setPlayingUi(false);
       }
     });
+
+    bgmPrevBtn.addEventListener('click', ()=>{
+      if(!bgmLoaded) loadBgmTrack(0, false);
+      loadBgmTrack(bgmIndex - 1, !bgmAudio.paused);
+    });
+    bgmNextBtn.addEventListener('click', ()=>{
+      if(!bgmLoaded) loadBgmTrack(0, false);
+      loadBgmTrack(bgmIndex + 1, !bgmAudio.paused);
+    });
+    bgmAudio.addEventListener('ended', ()=>{
+      loadBgmTrack(bgmIndex + 1, true);
+    });
+    bgmAudio.addEventListener('play', ()=> setPlayingUi(true));
+    bgmAudio.addEventListener('pause', ()=> setPlayingUi(false));
   }catch(err){ console.error('bgm init failed:', err); }
   try{
     // お気に入り(サイト共通):ログインしていない間は端末内、ログインするとアカウントに同期する。
@@ -2046,6 +2472,26 @@
   }catch(err){ console.error('favorites/achievements module init failed:', err); }
 
   try{
+    // 「いかにもコードのような文字列」を検知するための、簡易的なパターン一覧。
+    // ニックネームなど、自由記述のテキスト入力に対して使う
+    // (表示側はtextContentで安全に扱われているが、入り口でも弾く追加の防御層)。
+    const CODE_LIKE_PATTERN = /<\s{0,10}(script|iframe|object|embed|svg|img|style|link|meta|form|body|a)\b|javascript\s{0,10}:|data\s{0,10}:\s{0,10}text\/html|on[a-zA-Z]{1,20}\s{0,10}=|document\s{0,10}\.\s{0,10}\w|window\s{0,10}\.\s{0,10}\w|eval\s{0,10}\(|<%|%>|\$\{/i;
+    const CODE_LIKE_MAX_LENGTH = 2000;
+    window.containsCodeLikeContent = function(text){
+      if(typeof text !== 'string') return false;
+      if(text.length > CODE_LIKE_MAX_LENGTH) return true;
+      const normalized = text.normalize('NFKC');
+      const stripped = normalized.replace(/[\s\u200B-\u200D\uFEFF]/g, '');
+      return CODE_LIKE_PATTERN.test(normalized) || CODE_LIKE_PATTERN.test(stripped);
+    };
+    // ゼロ幅文字・双方向制御文字など、画面には見えないのに文字列としては
+    // 存在する、いわゆる「見えない文字」を取り除く。これらを名前に混ぜることで、
+    // 「見た目はそっくりだが、実は別の人」というなりすましに使われることがある。
+    window.stripInvisibleChars = function(text){
+      if(typeof text !== 'string') return text;
+      return text.replace(/[\u200B-\u200D\uFEFF\u202A-\u202E\u2066-\u2069\u0000-\u001F\u007F]/g, '');
+    };
+
     const loginBtn = document.getElementById('loginBtn');
     const logoutBtn = document.getElementById('logoutBtn');
     const loginAccount = document.getElementById('loginAccount');
@@ -2114,7 +2560,11 @@
     async function saveNickname(){
       const fb = window.__siteFirebase;
       if(!fb || !fb.ready || !fb.auth.currentUser) return;
-      const value = nicknameInput.value.trim().slice(0, 20);
+      const value = (typeof window.stripInvisibleChars === 'function' ? window.stripInvisibleChars(nicknameInput.value.trim()) : nicknameInput.value.trim()).slice(0, 20);
+      if(value && typeof window.containsCodeLikeContent === 'function' && window.containsCodeLikeContent(value)){
+        alert('ニックネームに、コードのような文字列は使用できません。');
+        return;
+      }
       try{
         await fb.setDoc(fb.doc(fb.db, 'users', fb.auth.currentUser.uid), { nickname: value || null }, { merge:true });
         currentNickname = value || null;
@@ -2216,7 +2666,7 @@
           return;
         }
         try{
-          const snap = await fb.getDocs(fb.collection(fb.db, 'presence'));
+          const snap = await fb.getDocs(fb.query(fb.collection(fb.db, 'presence'), fb.limit(200))); // 1回の読み込みで取得する上限を設け、際限なく増える読み込みを防ぐ
           const now = Date.now();
           let activeOthers = 0;
           snap.forEach(d=>{
