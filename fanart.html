@@ -46,12 +46,12 @@
   // ここに、ご自身のFirebaseプロジェクトの設定値を入力してください。
   // (他のページと、同じ値を入れてください。)
   const firebaseConfig = {
-    apiKey: "YOUR_FIREBASE_API_KEY",
-    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT_ID.appspot.com",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId: "YOUR_APP_ID"
+    apiKey: "AIzaSyDVY13Nbtj5UbqmhALmAYGC0QciHLIaMs0",
+    authDomain: "bantou-syoukou.firebaseapp.com",
+    projectId: "bantou-syoukou",
+    storageBucket: "bantou-syoukou.firebasestorage.app",
+    messagingSenderId: "1057439929500",
+    appId: "1:1057439929500:web:12488c9e24a7ded7578959"
   };
 
   window.__fanartFirebase = {};
@@ -3034,23 +3034,30 @@
     }
 
     function renderCommentsFor(docId, title){
-      const pageUrl = location.origin + location.pathname + '#fanart-' + docId;
-      if(window.DISQUS){
-        window.DISQUS.reset({
-          reload:true,
-          config:function(){ this.page.identifier = 'fanart-' + docId; this.page.url = pageUrl; this.page.title = title; }
-        });
-      }else{
-        window.disqus_config = function(){
-          this.page.url = pageUrl;
-          this.page.identifier = 'fanart-' + docId;
-          this.page.title = title;
-        };
-        const s = document.createElement('script');
-        s.src = 'https://' + window.DISQUS_SHORTNAME + '.disqus.com/embed.js';
-        s.setAttribute('data-timestamp', String(+new Date()));
-        (document.head || document.body).appendChild(s);
-      }
+      // コメント欄(Disqus)は外部サービスなので、失敗しても、作品の詳細を開く処理を止めないようにする。
+      try{
+        const pageUrl = location.origin + location.pathname + '#fanart-' + docId;
+        if(window.DISQUS && typeof window.DISQUS.reset === 'function'){
+          window.DISQUS.reset({
+            reload:true,
+            config:function(){ this.page.identifier = 'fanart-' + docId; this.page.url = pageUrl; this.page.title = title; }
+          });
+        }else{
+          window.disqus_config = function(){
+            this.page.url = pageUrl;
+            this.page.identifier = 'fanart-' + docId;
+            this.page.title = title;
+          };
+          const s = document.createElement('script');
+          s.src = 'https://' + window.DISQUS_SHORTNAME + '.disqus.com/embed.js';
+          s.setAttribute('data-timestamp', String(+new Date()));
+          // 二重に読み込まないようにする。読み込み中は、次に開いた作品の設定だけを更新しておく。
+          if(!window.__disqusEmbedRequested){
+            window.__disqusEmbedRequested = true;
+            (document.head || document.body).appendChild(s);
+          }
+        }
+      }catch(err){ console.error('comments init failed:', err); }
     }
 
     function openLightbox(item){
@@ -3071,14 +3078,16 @@
       const myUid = (siteFb && siteFb.ready && siteFb.auth && siteFb.auth.currentUser) ? siteFb.auth.currentUser.uid : null;
       deleteBtn.hidden = !(currentAuthorUid && myUid && myUid === currentAuthorUid);
       renderCommentsFor(item.id, item.name || 'ファンアート');
-      renderRelatedFanart(item);
-      if(typeof recordRewatch === 'function'){
-        const yt = youtubeEmbedUrl(item.imageUrl);
-        const ytIdMatch = item.imageUrl.match(/(?:youtube\.com\/watch\?v=|youtube\.com\/shorts\/|youtu\.be\/)([\w-]{11})/);
-        const isVideoFile = /\.(mp4|webm|mov)(\?.*)?$/i.test(item.imageUrl);
-        const thumbImg = yt ? `https://img.youtube.com/vi/${ytIdMatch[1]}/hqdefault.jpg` : (isVideoFile ? '' : item.imageUrl);
-        recordRewatch({ id: item.id, type:'fanart', title: item.name || '名無しさん', img: thumbImg });
-      }
+      try{ renderRelatedFanart(item); }catch(err){ console.error('related items failed:', err); }
+      try{
+        if(typeof recordRewatch === 'function'){
+          const yt = youtubeEmbedUrl(item.imageUrl);
+          const ytIdMatch = item.imageUrl.match(/(?:youtube\.com\/watch\?v=|youtube\.com\/shorts\/|youtu\.be\/)([\w-]{11})/);
+          const isVideoFile = /\.(mp4|webm|mov)(\?.*)?$/i.test(item.imageUrl);
+          const thumbImg = yt ? `https://img.youtube.com/vi/${ytIdMatch[1]}/hqdefault.jpg` : (isVideoFile ? '' : item.imageUrl);
+          recordRewatch({ id: item.id, type:'fanart', title: item.name || '名無しさん', img: thumbImg });
+        }
+      }catch(err){ console.error('rewatch record failed:', err); }
       lightbox.classList.add('open');
       document.body.style.overflow = 'hidden';
     }
@@ -3686,8 +3695,10 @@
       const siteFb = window.__siteFirebase;
       const authorUid = (siteFb && siteFb.auth && siteFb.auth.currentUser) ? siteFb.auth.currentUser.uid : null;
       const postCategory = lastPostingTab; // 投稿時に開いているタブ(Share room / ファンアート)がそのままカテゴリになる
-      const pickupFocusX = parseInt(document.getElementById('fanartPickupFocusX').value, 10) || 50;
-      const pickupFocusY = parseInt(document.getElementById('fanartPickupFocusY').value, 10) || 50;
+      // 0(端)も有効な値。数値として読めなかった時だけ、中央(50)にする。ルールに合わせて0〜100の整数に丸める。
+      const parseFocus = (id)=>{ const v = parseInt(document.getElementById(id).value, 10); return Number.isNaN(v) ? 50 : Math.min(100, Math.max(0, v)); };
+      const pickupFocusX = parseFocus('fanartPickupFocusX');
+      const pickupFocusY = parseFocus('fanartPickupFocusY');
       const pickupExcluded = document.getElementById('fanartPickupExcluded').checked;
 
       // クールダウンの「本当の確認」。上の簡易チェックは、あくまで即座に反応を返す

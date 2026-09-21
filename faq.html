@@ -46,12 +46,12 @@
   // ここに、ご自身のFirebaseプロジェクトの設定値を入力してください。
   // (他のページと、同じ値を入れてください。)
   const firebaseConfig = {
-    apiKey: "YOUR_FIREBASE_API_KEY",
-    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT_ID.appspot.com",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId: "YOUR_APP_ID"
+    apiKey: "AIzaSyDVY13Nbtj5UbqmhALmAYGC0QciHLIaMs0",
+    authDomain: "bantou-syoukou.firebaseapp.com",
+    projectId: "bantou-syoukou",
+    storageBucket: "bantou-syoukou.firebasestorage.app",
+    messagingSenderId: "1057439929500",
+    appId: "1:1057439929500:web:12488c9e24a7ded7578959"
   };
 
   window.__siteFirebase = {};
@@ -2487,6 +2487,46 @@
     // ゼロ幅文字・双方向制御文字など、画面には見えないのに文字列としては
     // 存在する、いわゆる「見えない文字」を取り除く。これらを名前に混ぜることで、
     // 「見た目はそっくりだが、実は別の人」というなりすましに使われることがある。
+    // BAN確認と、サイト全体の混雑防止(fanart.htmlと同じ仕組み)。
+    // ニックネーム変更・いいねなど、データベースへの書き込みの前に使う。
+    (function(){
+      const WINDOW_MS = 10 * 60 * 1000;
+      const MAX_ACTIONS = 40;
+      const BLOCK_MS = 10 * 60 * 1000;
+      window.isCurrentUserBanned = async function(){
+        const fb = window.__siteFirebase;
+        if(!fb || !fb.ready || !fb.auth || !fb.auth.currentUser) return false;
+        try{
+          const snap = await fb.getDoc(fb.doc(fb.db, 'bannedUsers', fb.auth.currentUser.uid));
+          return snap.exists();
+        }catch(err){ console.error('ban check failed:', err); return false; }
+      };
+      window.checkSiteWriteRateLimit = async function(docId){
+        const fb = window.__siteFirebase;
+        if(!fb || !fb.ready) return true;
+        if(!fb.auth || !fb.auth.currentUser) return true; // 未ログインは、ルール上カウンターに書き込めないため、確認を省く
+        try{
+          const ref = fb.doc(fb.db, 'siteConfig', docId);
+          let isBusy = false;
+          await fb.runTransaction(fb.db, async (tx)=>{
+            const snap = await tx.get(ref);
+            const data = snap.exists() ? snap.data() : {};
+            const now = Date.now();
+            if(data.blockedUntil && now < data.blockedUntil){ isBusy = true; return; }
+            let windowStart = data.windowStart || now;
+            let count = data.count || 0;
+            if(now - windowStart >= WINDOW_MS){ windowStart = now; count = 0; }
+            count += 1;
+            if(count >= MAX_ACTIONS){
+              tx.set(ref, { windowStart: now, count: 0, blockedUntil: now + BLOCK_MS });
+            }else{
+              tx.set(ref, { windowStart: windowStart, count: count, blockedUntil: null });
+            }
+          });
+          return !isBusy;
+        }catch(err){ console.error('rate limit check failed:', err); return true; }
+      };
+    })();
     window.stripInvisibleChars = function(text){
       if(typeof text !== 'string') return text;
       return text.replace(/[\u200B-\u200D\uFEFF\u202A-\u202E\u2066-\u2069\u0000-\u001F\u007F]/g, '');
@@ -2560,10 +2600,21 @@
     async function saveNickname(){
       const fb = window.__siteFirebase;
       if(!fb || !fb.ready || !fb.auth.currentUser) return;
+      if(typeof window.isCurrentUserBanned === 'function' && await window.isCurrentUserBanned()){
+        alert('このアカウントは、一部の操作を停止されています。');
+        return;
+      }
       const value = (typeof window.stripInvisibleChars === 'function' ? window.stripInvisibleChars(nicknameInput.value.trim()) : nicknameInput.value.trim()).slice(0, 20);
       if(value && typeof window.containsCodeLikeContent === 'function' && window.containsCodeLikeContent(value)){
         alert('ニックネームに、コードのような文字列は使用できません。');
         return;
+      }
+      if(typeof window.checkSiteWriteRateLimit === 'function'){
+        const okToProceed = await window.checkSiteWriteRateLimit('writeRateLimit');
+        if(!okToProceed){
+          alert('サイトが混み合っております。しばらくお待ちください。');
+          return;
+        }
       }
       try{
         await fb.setDoc(fb.doc(fb.db, 'users', fb.auth.currentUser.uid), { nickname: value || null }, { merge:true });

@@ -41,17 +41,17 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, limit, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, limit, serverTimestamp, runTransaction, increment, orderBy } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
   // ここに、ご自身のFirebaseプロジェクトの設定値を入力してください。
   // (他のページと、同じ値を入れてください。)
   const firebaseConfig = {
-    apiKey: "YOUR_FIREBASE_API_KEY",
-    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT_ID.appspot.com",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId: "YOUR_APP_ID"
+    apiKey: "AIzaSyDVY13Nbtj5UbqmhALmAYGC0QciHLIaMs0",
+    authDomain: "bantou-syoukou.firebaseapp.com",
+    projectId: "bantou-syoukou",
+    storageBucket: "bantou-syoukou.firebasestorage.app",
+    messagingSenderId: "1057439929500",
+    appId: "1:1057439929500:web:12488c9e24a7ded7578959"
   };
 
   window.__siteFirebase = {};
@@ -60,7 +60,7 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
     const provider = new GoogleAuthProvider();
-    window.__siteFirebase = { auth, db, provider, signInWithPopup, signOut, onAuthStateChanged, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, limit, serverTimestamp, runTransaction, ready:true };
+    window.__siteFirebase = { auth, db, provider, signInWithPopup, signOut, onAuthStateChanged, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, limit, serverTimestamp, runTransaction, increment, orderBy, ready:true };
   }catch(err){
     console.error('Firebase init failed:', err);
     window.__siteFirebase = { ready:false };
@@ -950,6 +950,17 @@
   }
   
   .works-sort-select:focus{ outline:none; border-color:var(--bengara); }
+
+  /* 作品の種類(イラスト・音楽・小説・映像)。それぞれのページへのリンク。今いるページは、色つきの枠で示す。 */
+  .works-type-links{ display:flex; gap:8px; flex-wrap:wrap; }
+  .works-type-link{
+    flex:none; font-family:var(--f-gothic); font-size:max(16px, calc(13px * var(--font-scale, 1))); color:var(--sumi);
+    background:var(--kinari-2); border:1px solid var(--line); border-radius:20px;
+    padding:8px 16px; text-decoration:none; letter-spacing:.08em;
+    transition:border-color .3s ease, color .3s ease, transform .3s ease;
+  }
+  .works-type-link:hover, .works-type-link:focus-visible{ border-color:var(--bengara); color:var(--bengara); transform:translateY(-2px); outline:none; }
+  .works-type-link[aria-current="true"]{ border-color:var(--bengara); color:var(--bengara); }
   
   /* 楽曲一覧 */
   .music-list{ max-width:720px; }
@@ -1344,9 +1355,12 @@
       </div>
 
       <div class="works-search">
-        <select id="musicFilter" class="works-sort-select" aria-label="絞り込み">
-          <option value="all">すべて</option>
-        </select>
+        <div class="works-type-links" role="navigation" aria-label="作品の種類">
+          <a class="works-type-link i18n" href="index.html#works" data-en="Illustration">イラスト</a>
+          <a class="works-type-link i18n" href="music.html" aria-current="true" data-en="Music">音楽</a>
+          <a class="works-type-link i18n" href="novel.html" data-en="Novel">小説</a>
+          <a class="works-type-link i18n" href="movie.html" data-en="Movie">映像</a>
+        </div>
         <select id="musicSort" class="works-sort-select" aria-label="並び替え">
           <option value="new">新しい順</option>
           <option value="old">古い順</option>
@@ -2553,23 +2567,30 @@
     let currentTrackId = null;
 
     function renderCommentsFor(id, title){
-      const pageUrl = location.origin + location.pathname + '#music-' + id;
-      if(window.DISQUS){
-        window.DISQUS.reset({
-          reload:true,
-          config:function(){ this.page.identifier = 'music-' + id; this.page.url = pageUrl; this.page.title = title; }
-        });
-      }else{
-        window.disqus_config = function(){
-          this.page.url = pageUrl;
-          this.page.identifier = 'music-' + id;
-          this.page.title = title;
-        };
-        const s = document.createElement('script');
-        s.src = 'https://' + window.DISQUS_SHORTNAME + '.disqus.com/embed.js';
-        s.setAttribute('data-timestamp', String(+new Date()));
-        (document.head || document.body).appendChild(s);
-      }
+      // コメント欄(Disqus)は外部サービスなので、失敗しても、作品の詳細を開く処理を止めないようにする。
+      try{
+        const pageUrl = location.origin + location.pathname + '#music-' + id;
+        if(window.DISQUS && typeof window.DISQUS.reset === 'function'){
+          window.DISQUS.reset({
+            reload:true,
+            config:function(){ this.page.identifier = 'music-' + id; this.page.url = pageUrl; this.page.title = title; }
+          });
+        }else{
+          window.disqus_config = function(){
+            this.page.url = pageUrl;
+            this.page.identifier = 'music-' + id;
+            this.page.title = title;
+          };
+          const s = document.createElement('script');
+          s.src = 'https://' + window.DISQUS_SHORTNAME + '.disqus.com/embed.js';
+          s.setAttribute('data-timestamp', String(+new Date()));
+          // 二重に読み込まないようにする。読み込み中は、次に開いた作品の設定だけを更新しておく。
+          if(!window.__disqusEmbedRequested){
+            window.__disqusEmbedRequested = true;
+            (document.head || document.body).appendChild(s);
+          }
+        }
+      }catch(err){ console.error('comments init failed:', err); }
     }
 
     function likedMusicIds(){
@@ -2599,7 +2620,7 @@
       likeCountEl.textContent = currentTrackLikes;
       likeBtn.classList.toggle('liked', likedMusicIds().includes(track.id));
       renderCommentsFor(track.id, track.title);
-      renderRelatedTracks(track);
+      try{ renderRelatedTracks(track); }catch(err){ console.error('related items failed:', err); }
       lightbox.classList.add('open');
       document.body.style.overflow = 'hidden';
     }
@@ -2654,6 +2675,7 @@
     async function checkSiteWriteRateLimit(docId){
       const fb = window.__siteFirebase;
       if(!fb || !fb.ready) return true;
+      if(!fb.auth || !fb.auth.currentUser) return true; // 未ログインは、ルール上カウンターに書き込めないため、確認を省く
       try{
         const rateLimitRef = fb.doc(fb.db, 'siteConfig', docId);
         let isBusy = false;
@@ -2675,6 +2697,9 @@
         return !isBusy;
       }catch(err){ console.error('rate limit check failed:', err); return true; }
     }
+    // ニックネーム変更など、別の場所からも使えるように公開しておく(fanart.htmlと同じ形)。
+    window.isCurrentUserBanned = isCurrentUserBanned;
+    window.checkSiteWriteRateLimit = checkSiteWriteRateLimit;
     likeBtn.addEventListener('click', async ()=>{
       const fb = window.__siteFirebase;
       if(!currentTrackId || !fb || !fb.ready) return;
@@ -2769,23 +2794,11 @@
     renderMusicList();
 
     const musicSortSelect = document.getElementById('musicSort');
-    const musicFilterSelect = document.getElementById('musicFilter');
-    function populateMusicFilterOptions(){
-      const cards = Array.from(listEl.querySelectorAll('.music-card'));
-      const years = Array.from(new Set(cards.map(c => c.dataset.year).filter(Boolean))).sort((a,b)=> b - a);
-      const currentValue = musicFilterSelect.value;
-      musicFilterSelect.innerHTML = '<option value="all">すべて</option>'
-        + years.map(y => `<option value="${escapeHtml(y)}">${escapeHtml(y)}年</option>`).join('');
-      if(years.includes(currentValue)) musicFilterSelect.value = currentValue;
-    }
+    // 並び替え(新しい順・古い順・人気順・タイトル順)。
+    // 作品の種類(イラスト・音楽・小説・映像)は、それぞれのページへのリンクにしたため、ここでは絞り込みをしない。
     function applyMusicFilterSort(){
       const mode = musicSortSelect.value;
-      const filterValue = musicFilterSelect.value;
       const cards = Array.from(listEl.querySelectorAll('.music-card'));
-      cards.forEach(c=>{
-        const visible = filterValue === 'all' || c.dataset.year === filterValue;
-        c.style.display = visible ? '' : 'none';
-      });
       cards.sort((a, b)=>{
         if(mode === 'new') return parseInt(b.dataset.year, 10) - parseInt(a.dataset.year, 10);
         if(mode === 'old') return parseInt(a.dataset.year, 10) - parseInt(b.dataset.year, 10);
@@ -2795,32 +2808,21 @@
       });
       cards.forEach(c => listEl.appendChild(c));
     }
-    // 並べ替え・絞り込みの設定を、次にページを開いた時も覚えておく。
+    // 並べ替えの設定を、次にページを開いた時も覚えておく。
     const MUSIC_SORT_PREF_KEY = 'music-sort-pref';
-    const MUSIC_FILTER_PREF_KEY = 'music-filter-pref';
     let musicSortFilterRestored = false;
     function saveMusicSortPref(){
       try{ localStorage.setItem(MUSIC_SORT_PREF_KEY, musicSortSelect.value); }catch(e){}
     }
-    function saveMusicFilterPref(){
-      try{ localStorage.setItem(MUSIC_FILTER_PREF_KEY, musicFilterSelect.value); }catch(e){}
-    }
     musicSortSelect.addEventListener('change', saveMusicSortPref);
-    musicFilterSelect.addEventListener('change', saveMusicFilterPref);
     musicSortSelect.addEventListener('change', applyMusicFilterSort);
-    musicFilterSelect.addEventListener('change', applyMusicFilterSort);
     window.refreshMusicFilterSort = function(){
-      populateMusicFilterOptions();
       if(!musicSortFilterRestored){
         musicSortFilterRestored = true;
         try{
           const savedSort = localStorage.getItem(MUSIC_SORT_PREF_KEY);
-          const savedFilter = localStorage.getItem(MUSIC_FILTER_PREF_KEY);
           if(savedSort && Array.from(musicSortSelect.options).some(o => o.value === savedSort)){
             musicSortSelect.value = savedSort;
-          }
-          if(savedFilter && Array.from(musicFilterSelect.options).some(o => o.value === savedFilter)){
-            musicFilterSelect.value = savedFilter;
           }
         }catch(e){}
       }
@@ -2962,10 +2964,21 @@
     async function saveNickname(){
       const fb = window.__siteFirebase;
       if(!fb || !fb.ready || !fb.auth.currentUser) return;
+      if(typeof window.isCurrentUserBanned === 'function' && await window.isCurrentUserBanned()){
+        alert('このアカウントは、一部の操作を停止されています。');
+        return;
+      }
       const value = (typeof window.stripInvisibleChars === 'function' ? window.stripInvisibleChars(nicknameInput.value.trim()) : nicknameInput.value.trim()).slice(0, 20);
       if(value && typeof window.containsCodeLikeContent === 'function' && window.containsCodeLikeContent(value)){
         alert('ニックネームに、コードのような文字列は使用できません。');
         return;
+      }
+      if(typeof window.checkSiteWriteRateLimit === 'function'){
+        const okToProceed = await window.checkSiteWriteRateLimit('writeRateLimit');
+        if(!okToProceed){
+          alert('サイトが混み合っております。しばらくお待ちください。');
+          return;
+        }
       }
       try{
         await fb.setDoc(fb.doc(fb.db, 'users', fb.auth.currentUser.uid), { nickname: value || null }, { merge:true });

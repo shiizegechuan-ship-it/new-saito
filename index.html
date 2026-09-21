@@ -42,17 +42,17 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, addDoc, orderBy, query, limit, updateDoc, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, addDoc, orderBy, query, limit, updateDoc, serverTimestamp, runTransaction, increment, where } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
   // ここに、ご自身のFirebaseプロジェクトの設定値を入力してください。
   // (ファンアートページで使っているものと、同じ値を入れてください。)
   const firebaseConfig = {
-    apiKey: "YOUR_FIREBASE_API_KEY",
-    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT_ID.appspot.com",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId: "YOUR_APP_ID"
+    apiKey: "AIzaSyDVY13Nbtj5UbqmhALmAYGC0QciHLIaMs0",
+    authDomain: "bantou-syoukou.firebaseapp.com",
+    projectId: "bantou-syoukou",
+    storageBucket: "bantou-syoukou.firebasestorage.app",
+    messagingSenderId: "1057439929500",
+    appId: "1:1057439929500:web:12488c9e24a7ded7578959"
   };
 
   window.__siteFirebase = {};
@@ -61,7 +61,7 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
     const provider = new GoogleAuthProvider();
-    window.__siteFirebase = { auth, db, provider, signInWithPopup, signOut, onAuthStateChanged, doc, getDoc, setDoc, deleteDoc, collection, getDocs, addDoc, orderBy, query, limit, updateDoc, serverTimestamp, runTransaction, ready:true };
+    window.__siteFirebase = { auth, db, provider, signInWithPopup, signOut, onAuthStateChanged, doc, getDoc, setDoc, deleteDoc, collection, getDocs, addDoc, orderBy, query, limit, updateDoc, serverTimestamp, runTransaction, increment, where, ready:true };
   }catch(err){
     console.error('Firebase init failed:', err);
     window.__siteFirebase = { ready:false };
@@ -1245,6 +1245,17 @@
   }
   
   .works-sort-select:focus{ outline:none; border-color:var(--bengara); }
+
+  /* 作品の種類(イラスト・音楽・小説・映像)。それぞれのページへのリンク。今いるページ(イラスト)は、色つきの枠で示す。 */
+  .works-type-links{ display:flex; gap:8px; flex-wrap:wrap; }
+  .works-type-link{
+    flex:none; font-family:var(--f-gothic); font-size:max(16px, calc(13px * var(--font-scale, 1))); color:var(--sumi);
+    background:var(--kinari-2); border:1px solid var(--line); border-radius:20px;
+    padding:8px 16px; text-decoration:none; letter-spacing:.08em;
+    transition:border-color .3s ease, color .3s ease, transform .3s ease;
+  }
+  .works-type-link:hover, .works-type-link:focus-visible{ border-color:var(--bengara); color:var(--bengara); transform:translateY(-2px); outline:none; }
+  .works-type-link[aria-current="true"]{ border-color:var(--bengara); color:var(--bengara); }
   
 
   .works-head-row{
@@ -2218,9 +2229,12 @@
 
       <div class="works-collapsible" id="worksCollapsible">
         <div class="works-search">
-          <select id="worksFilter" class="works-sort-select" aria-label="絞り込み">
-            <option value="all">すべて</option>
-          </select>
+          <div class="works-type-links" role="navigation" aria-label="作品の種類">
+            <a class="works-type-link i18n" href="#works" aria-current="true" data-en="Illustration">イラスト</a>
+            <a class="works-type-link i18n" href="music.html" data-en="Music">音楽</a>
+            <a class="works-type-link i18n" href="novel.html" data-en="Novel">小説</a>
+            <a class="works-type-link i18n" href="movie.html" data-en="Movie">映像</a>
+          </div>
           <select id="worksSort" class="works-sort-select" aria-label="並び替え">
             <option value="new">新しい順</option>
             <option value="old">古い順</option>
@@ -2730,10 +2744,14 @@
       })
       .catch(() => { countEl.textContent = '0'; });
   }
-  function incrementLikeCountOnce(id, countEl){
+  async function incrementLikeCountOnce(id, countEl){
     if(likedOnce.has(id)) return;
     const fb = window.__siteFirebase;
     if(!fb || !fb.ready) return;
+    // BAN済みのアカウントと、サイト全体が混雑している間は、そっと何も起きないようにする。
+    if(typeof window.isCurrentUserBanned === 'function' && await window.isCurrentUserBanned()) return;
+    if(typeof window.checkSiteWriteRateLimit === 'function' && !(await window.checkSiteWriteRateLimit('writeRateLimit'))) return;
+    if(likedOnce.has(id)) return; // 確認している間に連打されても、二重に通らないよう、もう一度確かめる
     const newVal = (parseInt(countEl.textContent, 10) || 0) + 1;
     countEl.textContent = newVal;
     countEl.closest('.work-card')?.dataset && (countEl.closest('.work-card').dataset.likes = newVal);
@@ -2833,9 +2851,13 @@
   // Firestoreに追加された作品(admin.htmlから投稿されたもの)を、後から読み込んで追加表示する。
   // また、admin.htmlで「削除」された、もともとハードコードされている作品は
   // (物理削除できないため)非表示リストに従って除外する。
+  // 管理画面で追加・削除された作品の読み込みが「終わったか」を、他の処理(今日のピックアップなど)が
+  // 待てるようにするための合図。成功でも失敗でも、終わったら必ず「完了」にする。
+  let resolveWorksLoaded;
+  window.worksLoadedPromise = new Promise(res => { resolveWorksLoaded = res; });
   async function loadDynamicWorks(){
     const fb = window.__siteFirebase;
-    if(!fb || !fb.ready) return;
+    if(!fb || !fb.ready){ resolveWorksLoaded(); return; }
     try{
       const [worksSnap, hiddenSnap] = await Promise.all([
         fb.getDocs(fb.query(fb.collection(fb.db, 'works'), fb.orderBy('createdAt', 'desc'), fb.limit(500))),
@@ -2862,6 +2884,8 @@
     }catch(err){
       console.error('failed to load dynamic works:', err);
       if(window.isQuotaError && window.isQuotaError(err)) window.onQuotaExceeded();
+    }finally{
+      resolveWorksLoaded();
     }
   }
   if(window.__siteFirebase && window.__siteFirebase.ready !== undefined){
@@ -2889,27 +2913,12 @@
 
   try{
     const worksSortSelect = document.getElementById('worksSort');
-    const worksFilterSelect = document.getElementById('worksFilter');
 
-    // 実際にある作品のカテゴリを集めて、絞り込みの選択肢を作る。
-    // (後から作品が追加された場合にも対応できるよう、呼ばれるたびに作り直す。)
-    function populateWorksFilterOptions(){
-      const cards = Array.from(grid.querySelectorAll('.work-card'));
-      const subs = Array.from(new Set(cards.map(c => c.dataset.sub).filter(Boolean))).sort();
-      const currentValue = worksFilterSelect.value;
-      worksFilterSelect.innerHTML = '<option value="all">すべて</option>'
-        + subs.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
-      if(subs.includes(currentValue)) worksFilterSelect.value = currentValue;
-    }
-
+    // 並び替え(新しい順・古い順・人気順・タイトル順)。
+    // 作品の種類(イラスト・音楽・小説・映像)は、それぞれのページへのリンクにしたため、ここでは絞り込みをしない。
     function applyWorksFilterSort(){
       const mode = worksSortSelect.value;
-      const filterValue = worksFilterSelect.value;
       const cards = Array.from(grid.querySelectorAll('.work-card'));
-      cards.forEach(c=>{
-        const visible = filterValue === 'all' || c.dataset.sub === filterValue;
-        c.style.display = visible ? '' : 'none';
-      });
       cards.sort((a, b)=>{
         if(mode === 'new') return parseInt(b.dataset.year, 10) - parseInt(a.dataset.year, 10);
         if(mode === 'old') return parseInt(a.dataset.year, 10) - parseInt(b.dataset.year, 10);
@@ -2923,37 +2932,26 @@
       });
       cards.forEach(c => grid.appendChild(c));
     }
-    // 並べ替え・絞り込みの設定を、次にページを開いた時も覚えておく。
+    // 並べ替えの設定を、次にページを開いた時も覚えておく。
     const WORKS_SORT_PREF_KEY = 'works-sort-pref';
-    const WORKS_FILTER_PREF_KEY = 'works-filter-pref';
     let worksSortFilterRestored = false;
     function saveWorksSortPref(){
       try{ localStorage.setItem(WORKS_SORT_PREF_KEY, worksSortSelect.value); }catch(e){}
     }
-    function saveWorksFilterPref(){
-      try{ localStorage.setItem(WORKS_FILTER_PREF_KEY, worksFilterSelect.value); }catch(e){}
-    }
     worksSortSelect.addEventListener('change', saveWorksSortPref);
-    worksFilterSelect.addEventListener('change', saveWorksFilterPref);
     worksSortSelect.addEventListener('change', applyWorksFilterSort);
-    worksFilterSelect.addEventListener('change', applyWorksFilterSort);
     window.resortWorksIfPopular = function(){
       if(worksSortSelect.value === 'popular') applyWorksFilterSort();
     };
     // 作品一覧が(最初の描画、または後からの追加読み込みで)作り直されるたびに、
-    // 絞り込みの選択肢も更新し、現在の並び替え・絞り込み条件を再適用する。
+    // 現在の並び替えの条件を再適用する。
     window.refreshWorksFilterSort = function(){
-      populateWorksFilterOptions();
       if(!worksSortFilterRestored){
         worksSortFilterRestored = true;
         try{
           const savedSort = localStorage.getItem(WORKS_SORT_PREF_KEY);
-          const savedFilter = localStorage.getItem(WORKS_FILTER_PREF_KEY);
           if(savedSort && Array.from(worksSortSelect.options).some(o => o.value === savedSort)){
             worksSortSelect.value = savedSort;
-          }
-          if(savedFilter && Array.from(worksFilterSelect.options).some(o => o.value === savedFilter)){
-            worksFilterSelect.value = savedFilter;
           }
         }catch(e){}
       }
@@ -3052,6 +3050,13 @@
     // 「自分の作品」の候補一覧を集める。作品自体の情報は window.worksData から、
     // いいね数・ピックアップ除外設定・サムネの焦点位置は Firestore から補う。
     async function fetchPickupCandidatesWorks(){
+      // 管理画面で追加・削除された作品が反映されるのを、少し待ってから候補を集める
+      // (待たないと、追加した作品が候補に入らず、削除した作品が選ばれてしまうことがある)。
+      // Firebaseに接続できていない時は、待っても反映されないので、待たない。
+      const fbNow = window.__siteFirebase;
+      if(fbNow && fbNow.ready && window.worksLoadedPromise){
+        await Promise.race([window.worksLoadedPromise, new Promise(r => setTimeout(r, 4000))]);
+      }
       if(typeof window.worksData === 'undefined' || !window.worksData.length) return [];
       const fb = window.__siteFirebase;
       const results = [];
@@ -3082,34 +3087,40 @@
     async function fetchPickupCandidatesFanart(category){
       const fb = window.__siteFirebase;
       if(!fb || !fb.ready) return [];
-      try{
-        const q = fb.query(
-          fb.collection(fb.db, 'fanart'),
-          fb.where('category', '==', category),
-          fb.where('isR18', '==', false),
-          fb.limit(60)
-        );
-        const snap = await fb.getDocs(q);
-        const results = [];
-        snap.forEach(d=>{
-          const data = d.data();
-          if(data.pickupExcluded) return;
-          // 表示できないURLの投稿は、ピックアップの候補にも含めない。
-          if(typeof window.isAllowedMediaUrl === 'function' && !window.isAllowedMediaUrl(data.imageUrl)) return;
-          results.push({
-            id: d.id, likes: normalizeLikes(data.likes),
-            title: data.name || '名無しさん', img: data.imageUrl,
-            focusX: data.pickupFocusX != null ? data.pickupFocusX : 50,
-            focusY: data.pickupFocusY != null ? data.pickupFocusY : 50,
-            linkHref: 'fanart.html'
+      // 一時的な通信の乱れで、枠が空になってしまわないよう、失敗した時は1回だけやり直す
+      // (無料枠の上限に達した場合は、やり直しても意味がないので、すぐにあきらめる)。
+      for(let attempt = 1; attempt <= 2; attempt++){
+        try{
+          const q = fb.query(
+            fb.collection(fb.db, 'fanart'),
+            fb.where('category', '==', category),
+            fb.where('isR18', '==', false),
+            fb.limit(60)
+          );
+          const snap = await fb.getDocs(q);
+          const results = [];
+          snap.forEach(d=>{
+            const data = d.data();
+            if(data.pickupExcluded) return;
+            // 表示できないURLの投稿は、ピックアップの候補にも含めない。
+            if(typeof window.isAllowedMediaUrl === 'function' && !window.isAllowedMediaUrl(data.imageUrl)) return;
+            results.push({
+              id: d.id, likes: normalizeLikes(data.likes),
+              title: data.name || '名無しさん', img: data.imageUrl,
+              focusX: data.pickupFocusX != null ? data.pickupFocusX : 50,
+              focusY: data.pickupFocusY != null ? data.pickupFocusY : 50,
+              linkHref: 'fanart.html'
+            });
           });
-        });
-        return results;
-      }catch(err){
-        console.error('pickup fanart fetch failed:', err);
-        if(window.isQuotaError && window.isQuotaError(err)) window.onQuotaExceeded();
-        return [];
+          return results;
+        }catch(err){
+          console.error('pickup fanart fetch failed:', err);
+          if(window.isQuotaError && window.isQuotaError(err)){ window.onQuotaExceeded(); return []; }
+          if(attempt === 2) return [];
+          await new Promise(r => setTimeout(r, 1500));
+        }
       }
+      return [];
     }
     // 3つのカテゴリ(自分の作品・Share room・ファンアート)それぞれから1件ずつ、
     // 「今日のピックアップ」を決定する。該当がなければ、その枠は null になる。
@@ -3136,9 +3147,16 @@
     const pickupDots = document.getElementById('pickupDots');
     const pickupEmpty = document.getElementById('pickupEmpty');
 
+    // 「先に(Firebaseなしで)表示 → 準備が整ってから表示し直す」ことがあるため、
+    // 古い実行の結果が、新しい実行の結果を上書きしないように、実行ごとに番号を付けて確かめる。
+    let pickupRunId = 0;
+    let pickupSlideTimer = null;
     async function initPickupCarousel(){
       if(typeof window.computeTodaysPickup !== 'function') return;
+      const myRunId = ++pickupRunId;
       const result = await window.computeTodaysPickup();
+      if(myRunId !== pickupRunId) return; // 後から始まった実行があるので、この結果は使わない
+      if(pickupSlideTimer){ clearInterval(pickupSlideTimer); pickupSlideTimer = null; }
       // 表示順は「自分の作品 → Share room(一般作品) → ファンアート作品」の固定順。
       // 該当がない枠は、そのままスキップする。
       const slides = [
@@ -3201,7 +3219,7 @@
       }
       // 一定間隔で、自動的に右の作品へスライドしていく(最後まで行ったら、また最初に戻る)。
       if(slides.length > 1){
-        setInterval(()=>{
+        pickupSlideTimer = setInterval(()=>{
           goToPickupSlide((currentSlide + 1) % slides.length);
         }, 6000);
       }
@@ -3209,17 +3227,23 @@
     if(window.__siteFirebase && window.__siteFirebase.ready !== undefined){
       initPickupCarousel();
     }else{
-      let pickupStarted = false;
-      const startPickupOnce = ()=>{
-        if(pickupStarted) return;
-        pickupStarted = true;
+      let pickupStartedWithFirebase = false; // Firebaseの準備が整った状態で、実行したか
+      let pickupStartedWithout = false;      // 待ちきれずに、Firebaseなしで先に実行したか
+      document.addEventListener('site-firebase-ready', ()=>{
+        if(pickupStartedWithFirebase) return;
+        pickupStartedWithFirebase = true;
+        // 通信が遅くて、先にFirebaseなしで表示していた場合も、ここで、完全な内容に表示し直す。
         initPickupCarousel();
-      };
-      document.addEventListener('site-firebase-ready', startPickupOnce, { once:true });
-      // Firebaseの準備が(何らかの理由で)整わない場合に備えて、
-      // 一定時間待っても合図が来なければ、接続なしのまま進める
+      }, { once:true });
+      // Firebaseの準備が(通信が遅いなどで)なかなか整わない場合に備えて、
+      // 一定時間待っても合図が来なければ、先に接続なしで進める
       // (「自分の作品」だけは、コードに書かれた情報だけでも表示できるため)。
-      setTimeout(startPickupOnce, 3000);
+      // 準備が整ったら、上の処理で、あらためて表示し直される。
+      setTimeout(()=>{
+        if(pickupStartedWithFirebase || pickupStartedWithout) return;
+        pickupStartedWithout = true;
+        initPickupCarousel();
+      }, 3000);
     }
   }catch(err){ console.error('pickup carousel init failed:', err); }
 
@@ -3737,27 +3761,34 @@
   let lastFocusedCard = null;
   let currentLightboxIndex = null;
   function renderCommentsFor(w, title){
-    const pageUrl = location.origin + location.pathname + '#work-' + w.id;
-    if(window.DISQUS){
-      window.DISQUS.reset({
-        reload: true,
-        config: function(){
-          this.page.identifier = w.id;
+    // コメント欄(Disqus)は外部サービスなので、失敗しても、作品の詳細を開く処理を止めないようにする。
+    try{
+      const pageUrl = location.origin + location.pathname + '#work-' + w.id;
+      if(window.DISQUS && typeof window.DISQUS.reset === 'function'){
+        window.DISQUS.reset({
+          reload: true,
+          config: function(){
+            this.page.identifier = w.id;
+            this.page.url = pageUrl;
+            this.page.title = title;
+          }
+        });
+      }else{
+        window.disqus_config = function(){
           this.page.url = pageUrl;
+          this.page.identifier = w.id;
           this.page.title = title;
+        };
+        const script = document.createElement('script');
+        script.src = 'https://' + window.DISQUS_SHORTNAME + '.disqus.com/embed.js';
+        script.setAttribute('data-timestamp', String(+new Date()));
+        // 二重に読み込まないようにする。読み込み中は、次に開いた作品の設定だけを更新しておく。
+        if(!window.__disqusEmbedRequested){
+          window.__disqusEmbedRequested = true;
+          (document.head || document.body).appendChild(script);
         }
-      });
-    }else{
-      window.disqus_config = function(){
-        this.page.url = pageUrl;
-        this.page.identifier = w.id;
-        this.page.title = title;
-      };
-      const script = document.createElement('script');
-      script.src = 'https://' + window.DISQUS_SHORTNAME + '.disqus.com/embed.js';
-      script.setAttribute('data-timestamp', String(+new Date()));
-      (document.head || document.body).appendChild(script);
-    }
+      }
+    }catch(err){ console.error('comments init failed:', err); }
   }
   function renderLightboxContent(i){
     currentLightboxIndex = i;
@@ -3785,8 +3816,8 @@
     if(typeof resetIllustrationZoom === 'function') resetIllustrationZoom();
     if(typeof exitIllustrationFullscreen === 'function') exitIllustrationFullscreen();
     renderCommentsFor(w, t.title);
-    renderRelatedWorks(w);
-    if(typeof recordRewatch === 'function') recordRewatch({ id: w.id, type:'work', title: w.title, titleEn: w.titleEn, color: w.color, img: w.img });
+    try{ renderRelatedWorks(w); }catch(err){ console.error('related items failed:', err); }
+    try{ if(typeof recordRewatch === 'function') recordRewatch({ id: w.id, type:'work', title: w.title, titleEn: w.titleEn, color: w.color, img: w.img }); }catch(err){ console.error('rewatch record failed:', err); }
   }
   // 今見ている作品の下に、関連する作品をさりげなく表示する(pixivのイメージ)。
   // 同じジャンルの作品を優先し、足りなければ他の作品で補う。
@@ -5145,6 +5176,46 @@
     // ゼロ幅文字・双方向制御文字など、画面には見えないのに文字列としては
     // 存在する、いわゆる「見えない文字」を取り除く。これらを名前に混ぜることで、
     // 「見た目はそっくりだが、実は別の人」というなりすましに使われることがある。
+    // BAN確認と、サイト全体の混雑防止(fanart.htmlと同じ仕組み)。
+    // ニックネーム変更・いいねなど、データベースへの書き込みの前に使う。
+    (function(){
+      const WINDOW_MS = 10 * 60 * 1000;
+      const MAX_ACTIONS = 40;
+      const BLOCK_MS = 10 * 60 * 1000;
+      window.isCurrentUserBanned = async function(){
+        const fb = window.__siteFirebase;
+        if(!fb || !fb.ready || !fb.auth || !fb.auth.currentUser) return false;
+        try{
+          const snap = await fb.getDoc(fb.doc(fb.db, 'bannedUsers', fb.auth.currentUser.uid));
+          return snap.exists();
+        }catch(err){ console.error('ban check failed:', err); return false; }
+      };
+      window.checkSiteWriteRateLimit = async function(docId){
+        const fb = window.__siteFirebase;
+        if(!fb || !fb.ready) return true;
+        if(!fb.auth || !fb.auth.currentUser) return true; // 未ログインは、ルール上カウンターに書き込めないため、確認を省く
+        try{
+          const ref = fb.doc(fb.db, 'siteConfig', docId);
+          let isBusy = false;
+          await fb.runTransaction(fb.db, async (tx)=>{
+            const snap = await tx.get(ref);
+            const data = snap.exists() ? snap.data() : {};
+            const now = Date.now();
+            if(data.blockedUntil && now < data.blockedUntil){ isBusy = true; return; }
+            let windowStart = data.windowStart || now;
+            let count = data.count || 0;
+            if(now - windowStart >= WINDOW_MS){ windowStart = now; count = 0; }
+            count += 1;
+            if(count >= MAX_ACTIONS){
+              tx.set(ref, { windowStart: now, count: 0, blockedUntil: now + BLOCK_MS });
+            }else{
+              tx.set(ref, { windowStart: windowStart, count: count, blockedUntil: null });
+            }
+          });
+          return !isBusy;
+        }catch(err){ console.error('rate limit check failed:', err); return true; }
+      };
+    })();
     window.stripInvisibleChars = function(text){
       if(typeof text !== 'string') return text;
       return text.replace(/[\u200B-\u200D\uFEFF\u202A-\u202E\u2066-\u2069\u0000-\u001F\u007F]/g, '');
@@ -5220,10 +5291,21 @@
     async function saveNickname(){
       const fb = window.__siteFirebase;
       if(!fb || !fb.ready || !fb.auth.currentUser) return;
+      if(typeof window.isCurrentUserBanned === 'function' && await window.isCurrentUserBanned()){
+        alert('このアカウントは、一部の操作を停止されています。');
+        return;
+      }
       const value = (typeof window.stripInvisibleChars === 'function' ? window.stripInvisibleChars(nicknameInput.value.trim()) : nicknameInput.value.trim()).slice(0, 20);
       if(value && typeof window.containsCodeLikeContent === 'function' && window.containsCodeLikeContent(value)){
         alert('ニックネームに、コードのような文字列は使用できません。');
         return;
+      }
+      if(typeof window.checkSiteWriteRateLimit === 'function'){
+        const okToProceed = await window.checkSiteWriteRateLimit('writeRateLimit');
+        if(!okToProceed){
+          alert('サイトが混み合っております。しばらくお待ちください。');
+          return;
+        }
       }
       try{
         await fb.setDoc(fb.doc(fb.db, 'users', fb.auth.currentUser.uid), { nickname: value || null }, { merge:true });
