@@ -40,7 +40,7 @@
 <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js" crossorigin="anonymous">
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, deleteDoc, setDoc, addDoc, orderBy, where, query, limit } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, deleteDoc, setDoc, addDoc, orderBy, where, query, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
   import { getAuth, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
   // 他のページと、同じ設定値を入力してください。
@@ -59,7 +59,7 @@
     const db = getFirestore(app);
     const auth = getAuth(app);
     window.__adminFirebase = {
-      db, collection, getDocs, doc, getDoc, updateDoc, deleteDoc, setDoc, addDoc, orderBy, where, query, limit,
+      db, collection, getDocs, doc, getDoc, updateDoc, deleteDoc, setDoc, addDoc, orderBy, where, query, limit, serverTimestamp,
       auth, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, onAuthStateChanged,
       ready:true
     };
@@ -695,11 +695,18 @@
   
 
   /* タブ切り替え */
-  .admin-tabs{ display:flex; gap:10px; margin-bottom:32px; }
+  /* タブが多くて横に並びきらない時は、この列だけを、左右にスクロールして選ぶ(ページ全体は、縮小しない)。 */
+  .admin-tabs{
+    display:flex; gap:10px; margin-bottom:32px;
+    flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; overscroll-behavior-x:contain;
+    scrollbar-width:none; padding-bottom:4px; max-width:100%;
+  }
+  .admin-tabs::-webkit-scrollbar{ display:none; }
   
   .admin-tabs[hidden]{ display:none; }
   
   .admin-tab{
+    flex:none; white-space:nowrap;
     font-family:var(--f-gothic); font-size:calc(13px * var(--font-scale, 1)); letter-spacing:.06em;
     color:var(--usuzumi); background:transparent; border:1px solid var(--line); border-radius:20px;
     padding:8px 22px; cursor:pointer; transition:border-color .3s ease, color .3s ease, background .3s ease;
@@ -1135,6 +1142,7 @@
         <button type="button" class="admin-tab" data-tab="novels">小説</button>
         <button type="button" class="admin-tab" data-tab="movies">映像</button>
         <button type="button" class="admin-tab" data-tab="requestStatus">ご依頼設定</button>
+        <button type="button" class="admin-tab" data-tab="announcements">声明</button>
       </div>
 
       <div class="admin-panel-body" id="adminRequestStatusPanel" hidden>
@@ -1185,6 +1193,34 @@
           <span>保存する</span>
         </button>
         <p class="admin-works-form-note" id="requestStatusNote" hidden></p>
+      </div>
+
+      <div class="admin-panel-body" id="adminAnnouncementsPanel" hidden>
+        <p class="admin-works-form-title">サイトの上部に、帯で表示するお知らせです。投稿すると、これまでの声明を上書きする形で、新しいものだけが帯に表示されます(古いものは、消えるのではなく「ログ」として残ります)。</p>
+        <label class="admin-works-form-full">
+          <span>声明の内容(200字まで)</span>
+          <textarea id="announcementText" rows="3" maxlength="200"></textarea>
+        </label>
+        <label class="admin-works-form-full" style="max-width:280px;">
+          <span>掲載期間</span>
+          <select id="announcementDuration">
+            <option value="3600000">1時間</option>
+            <option value="21600000">6時間</option>
+            <option value="86400000" selected>1日(既定)</option>
+            <option value="259200000">3日</option>
+            <option value="604800000">1週間</option>
+            <option value="">期限を設けない</option>
+          </select>
+        </label>
+        <button type="button" class="btn-line press-fill" id="announcementPostBtn">
+          <span>この声明を掲載する</span>
+        </button>
+        <p class="admin-works-form-note" id="announcementNote" hidden></p>
+
+        <p class="admin-works-form-title" style="font-size:calc(13px * var(--font-scale, 1)); margin-top:40px;">これまでの声明(ログ)</p>
+        <div class="admin-list" id="announcementLogList" hidden></div>
+        <p class="admin-empty" id="announcementLogEmpty" hidden>まだ、声明を掲載したことがありません。</p>
+        <p class="admin-loading" id="announcementLogLoading" hidden>読み込み中…</p>
       </div>
 
       <div class="admin-panel-body" id="adminInquiriesPanel" hidden>
@@ -2133,6 +2169,96 @@
         String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
     }
 
+    // --- 声明(サイト上部の帯に表示するお知らせ)---
+    const announcementText = document.getElementById('announcementText');
+    const announcementDuration = document.getElementById('announcementDuration');
+    const announcementPostBtn = document.getElementById('announcementPostBtn');
+    const announcementNote = document.getElementById('announcementNote');
+    const announcementLogList = document.getElementById('announcementLogList');
+    const announcementLogEmpty = document.getElementById('announcementLogEmpty');
+    const announcementLogLoading = document.getElementById('announcementLogLoading');
+    announcementPostBtn.addEventListener('click', async ()=>{
+      const fb = window.__adminFirebase;
+      const text = window.stripInvisibleChars ? window.stripInvisibleChars(announcementText.value.trim()) : announcementText.value.trim();
+      announcementNote.hidden = true;
+      if(!fb || !fb.ready) return;
+      if(!text){
+        announcementNote.hidden = false;
+        announcementNote.textContent = '声明の内容を入力してください。';
+        return;
+      }
+      if(text.length > 200){
+        announcementNote.hidden = false;
+        announcementNote.textContent = '声明は、200字以内にしてください。';
+        return;
+      }
+      if(typeof window.containsCodeLikeContent === 'function' && window.containsCodeLikeContent(text)){
+        announcementNote.hidden = false;
+        announcementNote.textContent = 'コードのような文字列は入力できません。';
+        return;
+      }
+      const durationMs = announcementDuration.value ? parseInt(announcementDuration.value, 10) : null;
+      announcementPostBtn.disabled = true;
+      try{
+        await fb.addDoc(fb.collection(fb.db, 'announcements'), {
+          text: text,
+          createdAt: fb.serverTimestamp(),
+          expiresAt: durationMs ? new Date(Date.now() + durationMs) : null
+        });
+        announcementText.value = '';
+        announcementNote.hidden = false;
+        announcementNote.textContent = '声明を掲載しました。サイトの上部の帯に表示されます。';
+        loadAnnouncementLog();
+      }catch(err){
+        console.error('announcement post failed:', err);
+        announcementNote.hidden = false;
+        announcementNote.textContent = '掲載に失敗しました。時間をおいて、もう一度お試しください。';
+      }finally{
+        announcementPostBtn.disabled = false;
+      }
+    });
+    async function loadAnnouncementLog(){
+      const fb = window.__adminFirebase;
+      if(!fb || !fb.ready){ announcementLogLoading.hidden = true; announcementLogEmpty.hidden = false; announcementLogEmpty.textContent = '読み込みに失敗しました。'; return; }
+      announcementLogLoading.hidden = false;
+      announcementLogList.innerHTML = '';
+      try{
+        const q = fb.query(fb.collection(fb.db, 'announcements'), fb.orderBy('createdAt', 'desc'), fb.limit(30));
+        const snap = await fb.getDocs(q);
+        announcementLogLoading.hidden = true;
+        if(snap.empty){ announcementLogEmpty.hidden = false; return; }
+        announcementLogEmpty.hidden = true;
+        announcementLogList.hidden = false;
+        snap.forEach(d=>{
+          const item = d.data();
+          const expires = item.expiresAt ? formatDate(item.expiresAt) : '期限なし';
+          const el = document.createElement('div');
+          el.className = 'admin-item';
+          el.innerHTML = `
+            <div class="admin-item-head">
+              <span class="admin-item-date">${formatDate(item.createdAt)}(掲載期限:${escapeHtml(expires)})</span>
+            </div>
+            <p class="admin-item-message">${escapeHtml(item.text || '')}</p>
+            <div class="admin-item-actions">
+              <button type="button" data-action="delete">削除</button>
+            </div>`;
+          el.querySelector('[data-action="delete"]').addEventListener('click', async ()=>{
+            if(!window.confirm('この声明を削除しますか?ログからも消えます。')) return;
+            try{
+              await fb.deleteDoc(fb.doc(fb.db, 'announcements', d.id));
+              el.remove();
+            }catch(err){ console.error('announcement delete failed:', err); }
+          });
+          announcementLogList.appendChild(el);
+        });
+      }catch(err){
+        console.error('load announcements failed:', err);
+        announcementLogLoading.hidden = true;
+        announcementLogEmpty.hidden = false;
+        announcementLogEmpty.textContent = '読み込みに失敗しました。';
+      }
+    }
+
     async function loadInquiries(){
       const fb = window.__adminFirebase;
       if(!fb || !fb.ready){ loadingEl.hidden = true; emptyEl.hidden = false; emptyEl.textContent = '読み込みに失敗しました。'; return; }
@@ -2659,6 +2785,8 @@
     const moviesPanel = document.getElementById('adminMoviesPanel');
     const requestStatusPanel = document.getElementById('adminRequestStatusPanel');
     let requestStatusLoaded = false;
+    const announcementsPanel = document.getElementById('adminAnnouncementsPanel');
+    let announcementLogLoaded = false;
     tabButtons.forEach(btn=>{
       btn.addEventListener('click', ()=>{
         tabButtons.forEach(b=> b.classList.toggle('active', b === btn));
@@ -2671,6 +2799,7 @@
         novelsPanel.hidden = tab !== 'novels';
         moviesPanel.hidden = tab !== 'movies';
         requestStatusPanel.hidden = tab !== 'requestStatus';
+        announcementsPanel.hidden = tab !== 'announcements';
         if(tab === 'fanart' && !fanartLoaded){ fanartLoaded = true; loadFanart(); }
         if(tab === 'banned' && !bannedLoaded){ bannedLoaded = true; loadBanned(); }
         if(tab === 'works' && !worksLoaded){ worksLoaded = true; loadWorks(); }
@@ -2678,6 +2807,7 @@
         if(tab === 'novels' && !novelsManager.loaded){ novelsManager.loaded = true; novelsManager.load(); }
         if(tab === 'movies' && !moviesManager.loaded){ moviesManager.loaded = true; moviesManager.load(); }
         if(tab === 'requestStatus' && !requestStatusLoaded){ requestStatusLoaded = true; loadRequestStatus(); }
+        if(tab === 'announcements' && !announcementLogLoaded){ announcementLogLoaded = true; loadAnnouncementLog(); }
       });
     });
 
@@ -2752,7 +2882,7 @@
             handleCodeInApp: true
           });
           localStorage.setItem(EMAIL_FOR_SIGNIN_KEY, ADMIN_EMAIL);
-          sendLinkNote.textContent = `${ADMIN_EMAIL} 宛てに、ログイン用のリンクを送信しました。`;
+          sendLinkNote.textContent = 'ログイン用のリンクを、登録されたメールアドレス宛てに送信しました。';
           sendLinkNote.hidden = false;
           emailCheckNote.hidden = false;
           sendLinkBtn.disabled = true;

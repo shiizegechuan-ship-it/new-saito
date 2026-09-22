@@ -62,7 +62,7 @@
     const auth = getAuth(app);
     const provider = new GoogleAuthProvider();
     window.__fanartFirebase = { db, collection, addDoc, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, increment, serverTimestamp, query, where, orderBy, limit, runTransaction, ready:true };
-    window.__siteFirebase = { auth, db, provider, signInWithPopup, signOut, onAuthStateChanged, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, limit, serverTimestamp, runTransaction, ready:true };
+    window.__siteFirebase = { auth, db, provider, signInWithPopup, signOut, onAuthStateChanged, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, limit, orderBy, serverTimestamp, runTransaction, ready:true };
   }catch(err){
     console.error('Firebase init failed:', err);
     window.__fanartFirebase = { ready:false };
@@ -161,8 +161,42 @@
     background-image:linear-gradient(to top, var(--bg-glow) 0%, rgba(0,0,0,0) 68%);
   }
   
+  /* 声明(サイト上部の帯)。ヘッダーより上に、重ならずに表示する。 */
+  #announceBar{
+    position:fixed; top:0; left:0; right:0; z-index:150;
+    display:flex; align-items:center; gap:10px;
+    height:40px; padding:0 10px 0 calc(14px + env(safe-area-inset-left));
+    padding-top:env(safe-area-inset-top);
+    background:var(--sumi); color:var(--kinari);
+    -webkit-transform:translateZ(0); transform:translateZ(0);
+  }
+  #announceBar[hidden]{ display:none; }
+  #announceTrack{
+    flex:1; min-width:0; height:100%; display:flex; align-items:center;
+    overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch;
+    touch-action:pan-x; scrollbar-width:none; cursor:default;
+  }
+  #announceTrack::-webkit-scrollbar{ display:none; }
+  #announceTrack p{
+    margin:0; white-space:nowrap; font-size:max(15px, calc(13px * var(--font-scale, 1)));
+    letter-spacing:.04em;
+  }
+  #announceCloseBtn{
+    flex:none; width:26px; height:26px; border-radius:50%; border:1px solid rgba(246,241,230,.5);
+    background:transparent; color:inherit; font-size:16px; line-height:1; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  #announceCloseBtn:hover{ background:rgba(246,241,230,.15); }
+
+  /* 「管理人ログ」(設定パネルから開く、過去の声明の一覧)。しおりと同じ、下から出る形。 */
+  #announceLogList .rewatch-item{ display:block; padding:14px 0; border-bottom:1px solid var(--line); }
+  #announceLogList .rewatch-item:first-child{ padding-top:0; }
+  #announceLogList .announce-log-date{ display:block; font-size:12px; color:var(--usuzumi); margin-bottom:6px; }
+  #announceLogList .announce-log-text{ margin:0; white-space:pre-wrap; word-break:break-word; }
+  #announceLogEmptyMsg{ text-align:center; color:var(--usuzumi); padding:40px 0; }
+
   header{
-    position:fixed; top:0; left:0; right:0; z-index:100;
+    position:fixed; top:var(--announce-h, 0px); left:0; right:0; z-index:100;
     display:flex; align-items:center; justify-content:space-between;
     padding:calc(22px + env(safe-area-inset-top)) 6vw 22px;
     transition:background-color .5s ease, padding .4s ease, box-shadow .4s ease;
@@ -1386,6 +1420,12 @@
 </style>
 </head>
 <body>
+<div id="announceBar" hidden>
+  <div id="announceTrack" aria-live="polite">
+    <p id="announceText"></p>
+  </div>
+  <button type="button" id="announceCloseBtn" aria-label="声明を閉じる">−</button>
+</div>
 <div class="network-status-banner" id="networkStatusBanner" hidden></div>
 <script>
   // 同じブラウザであれば、以前選んだダーク/ライトの状態を引き継ぐ。
@@ -1524,6 +1564,22 @@
     </div>
     <p class="bgm-track-name" id="bgmTrackName"></p>
     <audio id="bgmAudio" preload="none"></audio>
+    <div class="settings-row">
+      <span class="settings-row-label">声明</span>
+      <button type="button" class="btn-line press-fill" id="announceLogBtn"><span>管理人ログ</span></button>
+    </div>
+  </div>
+  <div class="bottom-sheet-backdrop" id="announceLogBackdrop" hidden></div>
+  <div class="bottom-sheet" id="announceLogSheet" hidden aria-label="管理人ログ">
+    <div class="bottom-sheet-handle"></div>
+    <div class="bottom-sheet-head">
+      <h3>管理人ログ</h3>
+      <button type="button" class="bottom-sheet-close" id="announceLogClose" aria-label="閉じる">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l16 16M20 4L4 20"/></svg>
+      </button>
+    </div>
+    <div id="announceLogList"></div>
+    <p id="announceLogEmptyMsg" hidden>まだ、声明はありません。</p>
   </div>
   <div class="site-search-panel" id="siteSearchPanel" hidden>
     <input type="search" id="siteSearchInput" class="site-search-input" maxlength="20" placeholder="サイト内を検索..." aria-label="サイト内検索">
@@ -2490,6 +2546,122 @@
 
     // しおり(閲覧履歴)の項目を押した時に、その作品のページへ移動し、詳細画面まで自動で開く。
     // 作品の種類ごとに、移動先のページと、「#種類-ID」の形のリンクで、目的の作品を指定する。
+    // 声明(サイト上部の帯)と、管理人ログ。
+    // Firestoreの announcements コレクションから、最新の1件を取ってきて帯に出す。
+    // 掲載期限を過ぎているものは、帯には出さない(ログには、期限後も残る)。
+    (function(){
+      const bar = document.getElementById('announceBar');
+      const track = document.getElementById('announceTrack');
+      const textEl = document.getElementById('announceText');
+      const closeBtn = document.getElementById('announceCloseBtn');
+      if(!bar) return;
+      const DISMISSED_KEY = 'announce-dismissed-id';
+      let scrollTimer = null;
+      let paused = false;
+
+      function setAnnounceHeight(px){
+        document.documentElement.style.setProperty('--announce-h', px + 'px');
+      }
+      function showBar(text){
+        textEl.textContent = text;
+        bar.hidden = false;
+        setAnnounceHeight(bar.getBoundingClientRect().height);
+        startAutoScroll();
+      }
+      function hideBar(){
+        bar.hidden = true;
+        setAnnounceHeight(0);
+        stopAutoScroll();
+      }
+      closeBtn.addEventListener('click', ()=>{
+        if(bar.dataset.id){
+          try{ localStorage.setItem(DISMISSED_KEY, bar.dataset.id); }catch(e){}
+        }
+        hideBar();
+      });
+      // ゆっくり、右から左へ自動で流す。指で触れている間は止まり、好きな部分を読める。
+      function startAutoScroll(){
+        stopAutoScroll();
+        // 短い文章で、そもそも流れる必要がない時は、何もしない。
+        if(track.scrollWidth <= track.clientWidth + 4) return;
+        scrollTimer = setInterval(()=>{
+          if(paused) return;
+          track.scrollLeft += 1;
+          if(track.scrollLeft >= track.scrollWidth - track.clientWidth){
+            track.scrollLeft = 0;
+          }
+        }, 40); // 1コマ1pxを40ミリ秒ごと(ゆっくり)
+      }
+      function stopAutoScroll(){
+        if(scrollTimer){ clearInterval(scrollTimer); scrollTimer = null; }
+      }
+      track.addEventListener('pointerdown', ()=>{ paused = true; });
+      track.addEventListener('pointerup', ()=>{ paused = false; });
+      track.addEventListener('pointercancel', ()=>{ paused = false; });
+      track.addEventListener('pointerleave', ()=>{ paused = false; });
+      // 文字の大きさが変わったら、帯の高さも変わるので、更新する。
+      window.addEventListener('font-scale-changed', ()=>{
+        if(!bar.hidden) setAnnounceHeight(bar.getBoundingClientRect().height);
+      });
+
+      async function loadCurrentAnnouncement(){
+        const fb = window.__siteFirebase;
+        if(!fb || !fb.ready) return;
+        try{
+          const q = fb.query(fb.collection(fb.db, 'announcements'), fb.orderBy('createdAt', 'desc'), fb.limit(1));
+          const snap = await fb.getDocs(q);
+          if(snap.empty) return;
+          const d = snap.docs[0];
+          const data = d.data();
+          const expiresAt = data.expiresAt ? (data.expiresAt.toDate ? data.expiresAt.toDate() : new Date(data.expiresAt)) : null;
+          if(expiresAt && expiresAt.getTime() <= Date.now()) return; // 期限切れ
+          let dismissed = null;
+          try{ dismissed = localStorage.getItem(DISMISSED_KEY); }catch(e){}
+          if(dismissed === d.id) return; // この声明は、既に閉じたことがある
+          bar.dataset.id = d.id;
+          showBar(data.text || '');
+        }catch(err){ console.error('announcement load failed:', err); }
+      }
+      document.addEventListener('site-firebase-ready', loadCurrentAnnouncement, { once:true });
+      setTimeout(loadCurrentAnnouncement, 3000); // Firebaseの準備が遅れても、あきらめて一度試す
+
+      // --- 管理人ログ(これまでの声明の一覧。設定パネルから開く) ---
+      const logBtn = document.getElementById('announceLogBtn');
+      const logBackdrop = document.getElementById('announceLogBackdrop');
+      const logSheet = document.getElementById('announceLogSheet');
+      const logList = document.getElementById('announceLogList');
+      const logEmpty = document.getElementById('announceLogEmptyMsg');
+      if(logBtn && logSheet){
+        async function renderAnnouncementLog(){
+          const fb = window.__siteFirebase;
+          logList.innerHTML = '';
+          if(!fb || !fb.ready){ logEmpty.hidden = false; logEmpty.textContent = '読み込みに失敗しました。'; return; }
+          try{
+            const q = fb.query(fb.collection(fb.db, 'announcements'), fb.orderBy('createdAt', 'desc'), fb.limit(20));
+            const snap = await fb.getDocs(q);
+            if(snap.empty){ logEmpty.hidden = false; logEmpty.textContent = 'まだ、声明はありません。'; return; }
+            logEmpty.hidden = true;
+            snap.forEach(d=>{
+              const data = d.data();
+              const createdAt = data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt)) : null;
+              const dateStr = createdAt ? createdAt.toLocaleString('ja-JP', { year:'numeric', month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '';
+              const item = document.createElement('div');
+              item.className = 'rewatch-item';
+              item.innerHTML = `<span class="announce-log-date">${escapeHtml(dateStr)}</span><p class="announce-log-text">${escapeHtml(data.text || '')}</p>`;
+              logList.appendChild(item);
+            });
+          }catch(err){
+            console.error('announcement log load failed:', err);
+            logEmpty.hidden = false;
+            logEmpty.textContent = '読み込みに失敗しました。';
+          }
+        }
+        const logCtl = bindSheetModal(logBackdrop, logSheet, 400, renderAnnouncementLog);
+        logBtn.addEventListener('click', ()=> logCtl.open());
+        document.getElementById('announceLogClose').addEventListener('click', logCtl.close);
+      }
+    })();
+
     function rewatchNavigate(entry){
       const PAGES = { work:'index.html', music:'music.html', novel:'novel.html', movie:'movie.html', fanart:'fanart.html' };
       const type = PAGES[entry.type] ? entry.type : 'work';
