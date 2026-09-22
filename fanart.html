@@ -1369,6 +1369,12 @@
   .fanart-card-fav svg{ width:12px; height:12px; stroke:var(--kinari); fill:none; }
   
   .fanart-card-fav.active svg{ fill:var(--bengara); stroke:var(--bengara); }
+
+  .fanart-caption-title{
+    display:block; font-family:var(--f-mincho); font-size:calc(13px * var(--font-scale, 1));
+    color:var(--sumi); margin-bottom:2px;
+  }
+  .fanart-lb-title{ font-family:var(--f-mincho); font-size:calc(14px * var(--font-scale, 1)); color:var(--usuzumi); margin:0 0 4px; }
   
   .lb-comments{ margin-top:1px; padding-top:24px; border-top:1px solid var(--line); }
   
@@ -1738,6 +1744,10 @@
           </p>
         </div>
         <div class="fanart-field">
+          <label for="fanartTitle" class="i18n" data-en="Title (optional)">作品タイトル(任意)</label>
+          <input type="text" id="fanartTitle" maxlength="15" placeholder="">
+        </div>
+        <div class="fanart-field">
           <label for="fanartName" class="i18n" data-en="Your name (optional)">お名前・ハンドルネーム(任意)</label>
           <input type="text" id="fanartName" maxlength="10" placeholder="名無しさん">
         </div>
@@ -1812,6 +1822,7 @@
   <div class="lb-inner">
     <div class="lb-img" id="fanartLbImg"></div>
     <div class="lb-text">
+      <p class="fanart-lb-title" id="fanartLbTitle" hidden></p>
       <h3 id="fanartLbName"></h3><span class="fanart-owner-badge" id="fanartLbOwnerBadge" hidden>運営者</span>
       <p class="meta" id="fanartLbMeta"></p>
       <div class="fanart-lb-actions">
@@ -3173,6 +3184,7 @@
     const form = document.getElementById('fanartForm');
     const urlInput = document.getElementById('fanartUrl');
     const nameInput = document.getElementById('fanartName');
+    const titleInput = document.getElementById('fanartTitle');
     const submitBtn = document.getElementById('fanartSubmitBtn');
     const grid = document.getElementById('fanartGrid');
     const emptyMsg = document.getElementById('fanartEmpty');
@@ -3181,6 +3193,7 @@
     const lightbox = document.getElementById('fanartLightbox');
     const lbImg = document.getElementById('fanartLbImg');
     const lbName = document.getElementById('fanartLbName');
+    const lbTitle = document.getElementById('fanartLbTitle');
 
     // ピックアップ用のサムネ設定(16:9の焦点位置)。画像・YouTubeのみ対応、
     // 直接の動画ファイルは対応対象外(クロップ元になる静止画がないため)。
@@ -3329,6 +3342,8 @@
       currentLikes = normalizeLikes(item.likes);
       currentAuthorUid = item.authorUid || null;
       lbImg.innerHTML = mediaHtml(item.imageUrl, escapeHtml(item.name || 'ファンアート'));
+      lbTitle.hidden = !item.title;
+      lbTitle.textContent = item.title || '';
       lbName.textContent = item.name || '名無しさん';
       document.getElementById('fanartLbOwnerBadge').hidden = !(item.authorUid && item.authorUid === OWNER_UID);
       lbMeta.textContent = formatDate(item.createdAt);
@@ -3346,7 +3361,7 @@
       currentEntryImg = fanartThumbImg(item);
       try{
         if(typeof recordRewatch === 'function'){
-          recordRewatch({ id: item.id, type:'fanart', title: item.name || '名無しさん', img: currentEntryImg });
+          recordRewatch({ id: item.id, type:'fanart', title: item.title || item.name || '名無しさん', img: currentEntryImg });
         }
       }catch(err){ console.error('rewatch record failed:', err); }
       lightbox.classList.add('open');
@@ -3375,9 +3390,10 @@
       const shuffled = candidates.slice().sort(()=> Math.random() - 0.5);
       const picks = shuffled.slice(0, 3);
       relatedGrid.innerHTML = picks.map(d=>{
+        const label = d.title || d.name || '名無しさん';
         return `<div class="lb-related-item" data-id="${escapeHtml(d.id)}">
-          ${thumbHtml(d.imageUrl, escapeHtml(d.name || '名無しさん'))}
-          <span class="lb-related-item-title">${escapeHtml(d.name || '名無しさん')}</span>
+          ${thumbHtml(d.imageUrl, escapeHtml(label))}
+          <span class="lb-related-item-title">${escapeHtml(label)}</span>
         </div>`;
       }).join('');
       relatedGrid.querySelectorAll('.lb-related-item').forEach(el=>{
@@ -3442,7 +3458,7 @@
     favBtn.addEventListener('click', ()=>{
       if(!currentDocId) return;
       const el = grid.querySelector(`[data-id="${currentDocId}"]`);
-      const entry = { id: currentDocId, type:'fanart', title: (el && el.dataset.name) || 'ファンアート', img: currentEntryImg };
+      const entry = { id: currentDocId, type:'fanart', title: (el && el._itemData && (el._itemData.title || el._itemData.name)) || 'ファンアート', img: currentEntryImg };
       toggleFanartFavorite({ id: currentDocId }, entry);
     });
 
@@ -3601,6 +3617,7 @@
           </span>
         </div>
         <div class="fanart-caption">
+          ${item.title ? `<span class="fanart-caption-title">${escapeHtml(item.title)}</span>` : ''}
           <span class="fanart-caption-name">${escapeHtml(item.name || '名無しさん')}${item.authorUid && item.authorUid === OWNER_UID ? '<span class="fanart-owner-badge" title="運営者本人の投稿です">運営者</span>' : ''}</span>
           <span class="fanart-caption-meta">
             <span class="fanart-mini-like">
@@ -3612,7 +3629,7 @@
       card.addEventListener('click', (e)=>{
         if(e.target.closest('[data-fav-id]')){
           e.stopPropagation();
-          toggleFanartFavorite(item, { id: item.id, type:'fanart', title: item.name || '名無しさん', img: fanartThumbImg(item) });
+          toggleFanartFavorite(item, { id: item.id, type:'fanart', title: item.title || item.name || '名無しさん', img: fanartThumbImg(item) });
           return;
         }
         openLightbox(item);
@@ -3989,6 +4006,10 @@
         alert('お名前・ハンドルネームに、コードのような文字列は使用できません。');
         return;
       }
+      if(window.containsCodeLikeContent(titleInput.value)){
+        alert('作品タイトルに、コードのような文字列は使用できません。');
+        return;
+      }
       if(!fb || !fb.ready){ alert('現在投稿を受け付けられません。時間をおいて再度お試しください。'); return; }
       if(window.__quotaExceeded){
         alert('現在アクセスが集中しているため、投稿を一時的に停止しています。時間をおいて再度お試しください。');
@@ -4064,10 +4085,12 @@
           return;
         }
       }
+      const trimmedTitle = window.stripInvisibleChars(titleInput.value.trim()).slice(0,15);
       try{
         const docRef = await fb.addDoc(fb.collection(fb.db, 'fanart'), {
           imageUrl: url,
           name: window.stripInvisibleChars(nameInput.value.trim()).slice(0,10),
+          ...(trimmedTitle ? { title: trimmedTitle } : {}), // 空の時は、titleという項目自体を付けない
           likes: 0,
           isR18: isR18,
           category: postCategory,
@@ -4081,7 +4104,7 @@
         // 今見えている一覧(現在のタブ)に該当する投稿だった場合だけ、その場に追加表示する。
         const matchesCurrentView = currentTab === 'r18' ? isR18 : (!isR18 && currentTab === postCategory);
         if(matchesCurrentView){
-          renderCard({ id:docRef.id, imageUrl:url, name:window.stripInvisibleChars(nameInput.value.trim()).slice(0,10), likes:0, isR18:isR18, category:postCategory, authorUid:authorUid, createdAt:new Date() });
+          renderCard({ id:docRef.id, imageUrl:url, name:window.stripInvisibleChars(nameInput.value.trim()).slice(0,10), ...(trimmedTitle ? { title: trimmedTitle } : {}), likes:0, isR18:isR18, category:postCategory, authorUid:authorUid, createdAt:new Date() });
           if(typeof window.refreshFanartFilterSort === 'function') window.refreshFanartFilterSort();
           emptyMsg.hidden = true;
         }

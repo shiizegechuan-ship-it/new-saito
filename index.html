@@ -3263,7 +3263,7 @@
             if(typeof window.isAllowedMediaUrl === 'function' && !window.isAllowedMediaUrl(data.imageUrl)) return;
             results.push({
               id: d.id, likes: normalizeLikes(data.likes),
-              title: data.name || '名無しさん', img: data.imageUrl,
+              title: data.title || data.name || '名無しさん', img: data.imageUrl,
               focusX: data.pickupFocusX != null ? data.pickupFocusX : 50,
               focusY: data.pickupFocusY != null ? data.pickupFocusY : 50,
               linkHref: 'fanart.html'
