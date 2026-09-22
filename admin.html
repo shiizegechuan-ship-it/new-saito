@@ -2554,6 +2554,26 @@
       workPickupCropMarker.hidden = true;
       document.getElementById('workPickupExcluded').checked = false;
     }
+    // 貼られたURLが、Xの「投稿ページそのもの」(https://x.com/ユーザー名/status/…)かどうかを見分ける。
+    // pbs.twimg.com(画像そのもの)は、別のホスト名なので、これには含まれない。
+    function isTweetPageUrl(url){
+      let u;
+      try{ u = new URL(url); }catch(e){ return false; }
+      const host = u.hostname.toLowerCase();
+      return host === 'twitter.com' || host.endsWith('.twitter.com') || host === 'x.com' || host.endsWith('.x.com');
+    }
+    // 保存する直前に、そのURLが実際に画像として読み込めるかどうかを、もう一度確かめる。
+    function verifyImageLoads(url, timeoutMs){
+      return new Promise((resolve)=>{
+        const img = new Image();
+        let done = false;
+        const finish = (ok)=>{ if(done) return; done = true; resolve(ok); };
+        img.onload = ()=> finish(true);
+        img.onerror = ()=> finish(false);
+        setTimeout(()=> finish(false), timeoutMs || 6000);
+        img.src = url;
+      });
+    }
     let workImgDebounce = null;
     document.getElementById('workImg').addEventListener('input', (e)=>{
       clearTimeout(workImgDebounce);
@@ -2572,12 +2592,27 @@
       e.preventDefault();
       const fb = window.__adminFirebase;
       if(!fb || !fb.ready){ alert('現在追加できません。時間をおいて再度お試しください。'); return; }
+      const imgUrl = document.getElementById('workImg').value.trim();
+      // 画像URLを入力した場合は、保存の直前に、実際に画像として読み込めるかどうかを、
+      // もう一度確かめる(よくある間違い:Xの「投稿ページそのもの」のリンクを貼ってしまい、
+      // 画像として読み込めず、あとから見た時に壊れて見える、というのを防ぐ)。
+      if(imgUrl){
+        const loads = await verifyImageLoads(imgUrl);
+        if(!loads){
+          if(isTweetPageUrl(imgUrl)){
+            alert('これは、投稿ページ(ツイート)そのもののリンクのようです。画像そのもののURLではありません。\n\n投稿を開き、スマホやiPadなら長押し(デスクトップなら右クリック)して、「画像をコピー」または「画像のアドレスをコピー」を選ぶと、pbs.twimg.comから始まる、画像そのもののURLが取得できます。');
+          }else{
+            alert('この画像を読み込めませんでした。URLをご確認ください。空欄のまま保存すると、背景色(色見本)が使われます。');
+          }
+          return;
+        }
+      }
       const data = {
         title: document.getElementById('workTitleJa').value.trim(),
         titleEn: document.getElementById('workTitleEn').value.trim(),
         sub: document.getElementById('workSub').value.trim(),
         year: document.getElementById('workYear').value.trim(),
-        img: document.getElementById('workImg').value.trim(),
+        img: imgUrl,
         color: document.getElementById('workColor').value.trim(),
         desc: document.getElementById('workDescJa').value.trim(),
         descEn: document.getElementById('workDescEn').value.trim(),

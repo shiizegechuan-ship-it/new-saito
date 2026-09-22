@@ -1707,11 +1707,11 @@
         <ol>
           <li class="i18n" data-en="Post your fan art on X (Twitter) as usual.">いつも通り、Xに投稿してください。</li>
           <li class="i18n" data-en="Open that post, and tap/click on the image itself to view it larger.">その投稿を開き、画像そのものをタップ(クリック)して、拡大表示にします。</li>
-          <li class="i18n" data-en="Long-press (or right-click) the enlarged image, and choose “Copy Image Address” / “画像アドレスをコピー”.">拡大された画像を長押し(パソコンの場合は右クリック)し、「画像アドレスをコピー」を選んでください。</li>
+          <li class="i18n" data-en="Then, on a phone or iPad, long-press the enlarged image; on a desktop, right-click it. Choose “Copy Image” or “Copy Image Address” (the exact wording differs by device).">スマホやiPadなら長押し、デスクトップなら右クリックし、「画像をコピー」または「画像のアドレスをコピー」(表記は端末により異なります)を選んでください。</li>
           <li class="i18n" data-en="Paste that copied address into the “Image URL” field below.">コピーしたアドレスを、下の「画像のURL」欄に貼り付けてください。</li>
         </ol>
-        <p class="fanart-howto-note i18n" data-en="Note: pasting the post's own URL (e.g. https://x.com/.../status/...) will not work — it must be the direct image address.">
-          ※ 投稿ページそのもののURL(例:https://x.com/…/status/…)を貼り付けても、正しく表示されません。必ず「画像そのもの」のアドレスをお使いください。
+        <p class="fanart-howto-note i18n" data-en="Note: pasting the post page's own URL (e.g. https://x.com/.../status/...) will not work — it must be the direct image address.">
+          ※ 投稿ページ(ツイート)そのもののURL(例:https://x.com/…/status/…)を貼り付けても、正しく表示されません。必ず「画像そのもの」のアドレスをお使いください。
         </p>
         <p class="fanart-howto-note i18n" data-en="X is not required — any site where you can copy a direct image address will work.">
           ※ Xに限らず、画像アドレスを直接コピーできるサイトであれば、どこの画像でも投稿いただけます。
@@ -1741,6 +1741,9 @@
           </div>
           <p class="fanart-preview-error i18n" data-en="This image couldn't be loaded. Please check the URL." id="fanartPreviewError" hidden>
             この画像を読み込めませんでした。URLをご確認ください。
+          </p>
+          <p class="fanart-preview-error i18n" data-en="This looks like a link to the post (tweet) page itself, not the image. Open the post, then on a phone or iPad long-press the image (on a desktop, right-click it), and choose “Copy Image” or “Copy Image Address” to get a direct pbs.twimg.com link." id="fanartPreviewTweetHint" hidden>
+            これは、投稿ページ(ツイート)そのもののリンクのようです。画像そのもののURLではありません。投稿を開き、スマホやiPadなら長押し(デスクトップなら右クリック)して、「画像をコピー」または「画像のアドレスをコピー」を選ぶと、pbs.twimg.comから始まる、画像そのもののURLが取得できます。
           </p>
         </div>
         <div class="fanart-field">
@@ -3235,6 +3238,7 @@
     const previewBox = document.getElementById('fanartPreview');
     const previewImg = document.getElementById('fanartPreviewImg');
     const previewError = document.getElementById('fanartPreviewError');
+    const previewTweetHint = document.getElementById('fanartPreviewTweetHint');
     let previewDebounce = null;
     urlInput.addEventListener('input', ()=>{
       clearTimeout(previewDebounce);
@@ -3242,11 +3246,13 @@
       if(!isAllowedMediaUrl(url)){
         previewBox.hidden = true;
         previewError.hidden = (url === '');
+        previewTweetHint.hidden = true;
         resetPickupSetting();
         return;
       }
       previewDebounce = setTimeout(()=>{
         previewError.hidden = true;
+        previewTweetHint.hidden = true;
         const ytId = (url.match(/(?:youtube\.com\/watch\?v=|youtube\.com\/shorts\/|youtu\.be\/)([\w-]{11})/) || [])[1];
         if(ytId){
           previewImg.onload = ()=>{ previewBox.hidden = false; };
@@ -3264,7 +3270,11 @@
         previewBox.innerHTML = '<img id="fanartPreviewImg" alt="プレビュー">';
         const img = document.getElementById('fanartPreviewImg');
         img.onload = ()=>{ previewBox.hidden = false; };
-        img.onerror = ()=>{ previewBox.hidden = true; previewError.hidden = false; };
+        img.onerror = ()=>{
+          previewBox.hidden = true;
+          if(isTweetPageUrl(url)){ previewTweetHint.hidden = false; }
+          else{ previewError.hidden = false; }
+        };
         img.src = url;
         showPickupSettingWithImage(url);
       }, 300);
@@ -3500,6 +3510,27 @@
     // 十分に余裕を持たせつつ、悪用目的の異常に長い文字列(難読化などに使われがち)は
     // 弾けるよう、200文字を上限にする。
     const MAX_MEDIA_URL_LENGTH = 200;
+    // 貼られたURLが、Xの「投稿ページそのもの」(https://x.com/ユーザー名/status/…)かどうかを見分ける。
+    // pbs.twimg.com(画像そのもの)は、別のホスト名なので、これには含まれない。
+    function isTweetPageUrl(url){
+      let u;
+      try{ u = new URL(url); }catch(e){ return false; }
+      const host = u.hostname.toLowerCase();
+      return host === 'twitter.com' || host.endsWith('.twitter.com') || host === 'x.com' || host.endsWith('.x.com');
+    }
+    // 投稿する直前に、そのURLが実際に画像として読み込めるかどうかを、もう一度確かめる。
+    // (プレビューの結果を待たずに投稿ボタンが押された場合の、取りこぼしを防ぐため。)
+    function verifyImageLoads(url, timeoutMs){
+      return new Promise((resolve)=>{
+        const img = new Image();
+        let done = false;
+        const finish = (ok)=>{ if(done) return; done = true; resolve(ok); };
+        img.onload = ()=> finish(true);
+        img.onerror = ()=> finish(false);
+        setTimeout(()=> finish(false), timeoutMs || 6000);
+        img.src = url;
+      });
+    }
     function isAllowedMediaUrl(rawUrl){
       if(typeof rawUrl !== 'string' || rawUrl.length > MAX_MEDIA_URL_LENGTH) return false;
       let u;
@@ -4001,6 +4032,25 @@
       if(!isAllowedMediaUrl(url)){
         alert('対応していないURLです。X (Twitter)・YouTube・pixiv の、画像または動画のURLのみ投稿できます。');
         return;
+      }
+      // YouTube・動画ファイル以外(=画像として表示するつもりのもの)は、
+      // 投稿の直前に、実際に画像として読み込めるかどうかを、もう一度確かめる。
+      // (よくある間違い:Xの「投稿ページそのもの」のリンクを貼ってしまい、
+      //  画像として読み込めず、あとから見た時に壊れて見える、というのを防ぐ。)
+      const isYoutubeLink = !!youtubeEmbedUrl(url);
+      const isVideoFileLink = /\.(mp4|webm|mov)(\?.*)?$/i.test(url);
+      if(!isYoutubeLink && !isVideoFileLink){
+        submitBtn.disabled = true;
+        const loads = await verifyImageLoads(url);
+        submitBtn.disabled = false;
+        if(!loads){
+          if(isTweetPageUrl(url)){
+            alert('これは、投稿ページ(ツイート)そのもののリンクのようです。画像そのもののURLではありません。\n\n投稿を開き、スマホやiPadなら長押し(デスクトップなら右クリック)して、「画像をコピー」または「画像のアドレスをコピー」を選ぶと、pbs.twimg.comから始まる、画像そのもののURLが取得できます。');
+          }else{
+            alert('この画像を読み込めませんでした。URLをご確認ください。');
+          }
+          return;
+        }
       }
       if(window.containsCodeLikeContent(nameInput.value)){
         alert('お名前・ハンドルネームに、コードのような文字列は使用できません。');
