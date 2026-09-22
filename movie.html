@@ -1291,12 +1291,18 @@
   </div>
   <div class="bookmark-tabs">
     <button type="button" class="bookmark-tab active" data-bmtab="viewed">閲覧履歴</button>
+    <button type="button" class="bookmark-tab" data-bmtab="favorites">いいね欄</button>
     <button type="button" class="bookmark-tab" data-bmtab="achievements">実績一覧</button>
   </div>
 
   <div class="bookmark-panel" id="bookmarkViewedPanel">
     <div class="rewatch-list" id="rewatchList"></div>
     <p class="rewatch-empty" id="rewatchEmpty" hidden>まだ閲覧した作品がありません。</p>
+  </div>
+
+  <div class="bookmark-panel" id="bookmarkFavoritesPanel" hidden>
+    <div class="rewatch-list" id="favoritesList"></div>
+    <p class="rewatch-empty" id="favoritesEmpty" hidden>まだ、いいね(お気に入り)がありません。</p>
   </div>
 
   <div class="bookmark-panel" id="bookmarkAchievementsPanel" hidden>
@@ -1366,12 +1372,9 @@
       <h3 id="movieLbTitle"></h3>
       <p class="meta" id="movieLbMeta"></p>
       <div class="lb-actions-row">
-        <button type="button" class="movie-fav-btn" id="movieFavBtn" aria-label="お気に入りに追加" aria-pressed="false">
+        <button type="button" class="movie-fav-btn" id="movieFavBtn" aria-label="いいね" aria-pressed="false">
           <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6.7-4.35-9.3-8.1C1 10.2 1.8 6.9 4.6 5.4c2.2-1.2 4.7-.5 6 1.3l1.4 1.9 1.4-1.9c1.3-1.8 3.8-2.5 6-1.3 2.8 1.5 3.6 4.8 1.9 7.5C18.7 16.65 12 21 12 21z"/></svg>
-          <span class="i18n" data-en="Favorite">お気に入り</span>
-        </button>
-        <button type="button" class="movie-like-btn" id="movieLikeBtn" aria-label="いいね">
-          <svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6.7-4.35-9.3-8.1C1 10.2 1.8 6.9 4.6 5.4c2.2-1.2 4.7-.5 6 1.3l1.4 1.9 1.4-1.9c1.3-1.8 3.8-2.5 6-1.3 2.8 1.5 3.6 4.8 1.9 7.5C18.7 16.65 12 21 12 21z"/></svg>
+          <span class="i18n" data-en="Like">いいね</span>
           <span id="movieLikeCount">0</span>
         </button>
       </div>
@@ -2197,16 +2200,59 @@
 
     const bookmarkTabs = document.querySelectorAll('.bookmark-tab');
     const viewedPanel = document.getElementById('bookmarkViewedPanel');
+    const favPanel = document.getElementById('bookmarkFavoritesPanel');
     const achPanel = document.getElementById('bookmarkAchievementsPanel');
     bookmarkTabs.forEach(tab=>{
       tab.addEventListener('click', ()=>{
         bookmarkTabs.forEach(t=> t.classList.toggle('active', t === tab));
         const which = tab.dataset.bmtab;
         viewedPanel.hidden = which !== 'viewed';
+        favPanel.hidden = which !== 'favorites';
         achPanel.hidden = which !== 'achievements';
+        if(which === 'favorites' && typeof window.renderFavoritesList === 'function') window.renderFavoritesList();
         if(which === 'achievements') renderAchievements();
       });
     });
+
+    // 「いいね欄」(お気に入りの一覧)。表示・移動の仕組みは、閲覧履歴とほぼ同じなので、
+    // サムネイルの作り方(rewatchThumbHtml)を、共通の部品として、両方から使う。
+    function rewatchThumbHtml(entry){
+      const title = (isEnglish() && entry.titleEn) ? entry.titleEn : entry.title;
+      const fallbackColor = entry.color || 'linear-gradient(150deg,#726B5E,#4A453B)';
+      const imgIsSafe = entry.img && (entry.type !== 'fanart' || window.isAllowedMediaUrl(entry.img));
+      return imgIsSafe
+        ? `<img src="${escapeHtml(entry.img)}" alt="${escapeHtml(title)}" style="width:100%;height:100%;object-fit:cover;" loading="lazy" decoding="async" onerror="this.outerHTML='<div style=&quot;position:absolute;inset:0;background:${escapeHtml(fallbackColor)}&quot;></div>'">`
+        : `<div style="position:absolute;inset:0;background:${escapeHtml(fallbackColor)}"></div>`;
+    }
+    const favoritesList = document.getElementById('favoritesList');
+    const favoritesEmpty = document.getElementById('favoritesEmpty');
+    window.renderFavoritesList = function(){
+      if(!favoritesList || typeof window.FavModule === 'undefined') return;
+      const list = window.FavModule.list();
+      favoritesList.innerHTML = '';
+      favoritesEmpty.hidden = list.length > 0;
+      list.forEach(entry=>{
+        const title = (isEnglish() && entry.titleEn) ? entry.titleEn : entry.title;
+        const item = document.createElement('div');
+        item.className = 'rewatch-item';
+        item.innerHTML = `<div class="rewatch-thumb">${rewatchThumbHtml(entry)}</div><p>${escapeHtml(title)}</p>`;
+        item.addEventListener('click', ()=>{
+          rewatchCtl.close();
+          rewatchNavigate(entry);
+        });
+        favoritesList.appendChild(item);
+      });
+    };
+    // お気に入りの状態が変わるたび(お気に入りにした・外した、どちらでも)、
+    // 「いいね欄」が今開いていれば、その場で表示を更新する。
+    // FavModuleは、このページの中で、この時点よりあとに定義されるため、
+    // 定義が終わってから登録できるよう、少し遅らせる。
+    setTimeout(()=>{
+      window.FavModule.onChange(()=>{
+        const favPanel = document.getElementById('bookmarkFavoritesPanel');
+        if(favPanel && !favPanel.hidden) window.renderFavoritesList();
+      });
+    }, 0);
 
     const rewatchCtl = bindSheetModal(rewatchBackdrop, rewatchSheet, 400, renderRewatchList);
     navRewatch.addEventListener('click', (e)=>{
@@ -2392,30 +2438,47 @@
     function saveLocalFavorites(set){
       try{ localStorage.setItem(FAV_KEY, JSON.stringify([...set])); }catch(e){}
     }
+    const FAV_ENTRIES_KEY = 'portfolio-favorite-entries';
+    function loadLocalFavoriteEntries(){
+      try{ return JSON.parse(localStorage.getItem(FAV_ENTRIES_KEY) || '{}'); }catch(e){ return {}; }
+    }
+    function saveLocalFavoriteEntries(entries){
+      try{ localStorage.setItem(FAV_ENTRIES_KEY, JSON.stringify(entries)); }catch(e){}
+    }
     const FavModule = (function(){
       let uid = null;
       let cache = loadLocalFavorites();
+      let entries = loadLocalFavoriteEntries();
       const listeners = [];
       function notify(){ listeners.forEach(fn=>{ try{ fn(cache); }catch(e){} }); }
       async function persist(){
         if(uid && window.__siteFirebase && window.__siteFirebase.ready && !window.__quotaExceeded){
           const fb = window.__siteFirebase;
-          try{ await fb.setDoc(fb.doc(fb.db, 'users', uid), { favorites: [...cache] }, { merge:true }); }
+          try{ await fb.setDoc(fb.doc(fb.db, 'users', uid), { favorites: [...cache], favoriteEntries: entries }, { merge:true }); }
           catch(err){
             console.error('favorites sync failed:', err);
             if(window.isQuotaError(err)) window.onQuotaExceeded();
             saveLocalFavorites(cache);
+            saveLocalFavoriteEntries(entries);
           }
         }else{
           saveLocalFavorites(cache);
+          saveLocalFavoriteEntries(entries);
         }
       }
       return {
         onChange(fn){ listeners.push(fn); fn(cache); },
         has(id){ return cache.has(id); },
         size(){ return cache.size; },
-        toggle(id){
-          if(cache.has(id)) cache.delete(id); else cache.add(id);
+        list(){ return [...cache].reverse().map(id => entries[id]).filter(Boolean); },
+        toggle(id, entry){
+          if(cache.has(id)){
+            cache.delete(id);
+            delete entries[id];
+          }else{
+            cache.add(id);
+            if(entry) entries[id] = entry;
+          }
           persist();
           notify();
           return cache.has(id);
@@ -2424,17 +2487,25 @@
           if(newUid){
             const fb = window.__siteFirebase;
             let remote = new Set();
+            let remoteEntries = {};
             try{
               const snap = await fb.getDoc(fb.doc(fb.db, 'users', newUid));
-              if(snap.exists() && Array.isArray(snap.data().favorites)) remote = new Set(snap.data().favorites);
+              if(snap.exists()){
+                const data = snap.data();
+                if(Array.isArray(data.favorites)) remote = new Set(data.favorites);
+                if(data.favoriteEntries && typeof data.favoriteEntries === 'object') remoteEntries = data.favoriteEntries;
+              }
             }catch(err){ console.error('failed to load account favorites:', err); }
             const local = loadLocalFavorites();
+            const localEntries = loadLocalFavoriteEntries();
             cache = new Set([...remote, ...local]);
+            entries = { ...localEntries, ...remoteEntries };
             uid = newUid;
             await persist();
           }else{
             uid = null;
             cache = loadLocalFavorites();
+            entries = loadLocalFavoriteEntries();
           }
           notify();
         }
@@ -2629,7 +2700,6 @@
     function unmarkMovieLiked(id){
       try{ localStorage.setItem('movie-liked', JSON.stringify(likedMovieIds().filter(x => x !== id))); }catch(e){}
     }
-    const likeBtn = document.getElementById('movieLikeBtn');
     const likeCountEl = document.getElementById('movieLikeCount');
     let currentVideoLikes = 0;
 
@@ -2641,11 +2711,11 @@
       lbMeta.textContent = 'Movie / ' + video.year;
       lbDesc.textContent = video.desc;
       const favId = 'movie-' + video.id;
+      favBtn.dataset.favId = favId;
       favBtn.classList.toggle('active', FavModule.has(favId));
       favBtn.setAttribute('aria-pressed', String(FavModule.has(favId)));
       currentVideoLikes = normalizeLikes(video.likes);
       likeCountEl.textContent = currentVideoLikes;
-      likeBtn.classList.toggle('liked', likedMovieIds().includes(video.id));
       try{
         if(typeof recordRewatch === 'function'){
           const thumb = video.url ? youtubeThumbUrl(video.url) : null;
@@ -2736,53 +2806,58 @@
     // ニックネーム変更など、別の場所からも使えるように公開しておく(fanart.htmlと同じ形)。
     window.isCurrentUserBanned = isCurrentUserBanned;
     window.checkSiteWriteRateLimit = checkSiteWriteRateLimit;
-    likeBtn.addEventListener('click', async ()=>{
-      const fb = window.__siteFirebase;
-      const likedId = currentVideoId; // 確認の通信を待つ間に、別の作品へ切り替わっても、押した作品に記録するため
-      if(!likedId || !fb || !fb.ready) return;
-      if(likedMovieIds().includes(likedId)) return; // 1人1回まで
-      // 先に、画面と「押した」記録を更新する(すぐに反映され、連打しても二重に通らない)。
-      // そのあと、BAN・混雑防止の確認で止められた場合は、元に戻す。
-      likeBtn.classList.add('liked');
-      currentVideoLikes += 1;
-      likeCountEl.textContent = currentVideoLikes;
-      markMovieLiked(likedId);
-      let blocked = false;
-      try{
-        blocked = (await isCurrentUserBanned()) || !(await checkSiteWriteRateLimit('writeRateLimit'));
-      }catch(err){ blocked = false; }
-      if(blocked){
-        unmarkMovieLiked(likedId);
-        if(currentVideoId === likedId){
-          likeBtn.classList.remove('liked');
-          currentVideoLikes = Math.max(0, currentVideoLikes - 1);
-          likeCountEl.textContent = currentVideoLikes;
-        }
-        return;
-      }
-      try{
-        await fb.setDoc(fb.doc(fb.db, 'movies', likedId), { likes: fb.increment(1) }, { merge:true });
-        const video = videos.find(v => v.id === likedId);
-        if(video) video.likes = normalizeLikes(video.likes) + 1;
-        const card = listEl.querySelector(`.movie-card[data-id="${likedId}"]`);
-        if(card){
-          card.dataset.likes = normalizeLikes(video && video.likes);
-          const span = card.querySelector('.movie-mini-like span');
-          if(span) span.textContent = card.dataset.likes;
-        }
-      }catch(err){ console.error('movie like failed:', err); }
-    });
-    favBtn.addEventListener('click', ()=>{
-      if(!currentVideoId) return;
-      const favId = 'movie-' + currentVideoId;
-      const active = FavModule.toggle(favId);
-      favBtn.classList.toggle('active', active);
-      favBtn.setAttribute('aria-pressed', String(active));
-      if(active && typeof AchievementModule !== 'undefined' && AchievementModule.isLoggedIn()){
+    // お気に入り(♡)と、いいねを、1つの操作にまとめている。
+    // お気に入りにした時(外す時は、いいねの数はそのまま。減らさない)、初めての時だけ、
+    // いいねの数を1つ増やす。「更新した数を、カード・詳細画面のどちらが開いていても、その場に反映する」
+    // 処理は、カード側のクリックとも共有できるよう、関数として切り出している。
+    async function toggleMovieFavorite(video, entry){
+      const favId = 'movie-' + video.id;
+      const willBeActive = !FavModule.has(favId);
+      FavModule.toggle(favId, willBeActive ? entry : undefined);
+      document.querySelectorAll(`[data-fav-id="${favId}"]`).forEach(el=>{
+        el.classList.toggle('active', willBeActive);
+        el.setAttribute('aria-pressed', String(willBeActive));
+      });
+      if(willBeActive && typeof AchievementModule !== 'undefined' && AchievementModule.isLoggedIn()){
         AchievementModule.unlock('first-favorite');
         if(FavModule.size() >= 5) AchievementModule.unlock('collector');
         if(FavModule.size() >= 10) AchievementModule.unlock('mega-collector');
       }
+      if(!willBeActive) return; // お気に入りを外した時は、いいねの数はそのまま
+      const fb = window.__siteFirebase;
+      const likedId = video.id;
+      if(!fb || !fb.ready) return;
+      if(likedMovieIds().includes(likedId)) return; // 1人1回まで
+      markMovieLiked(likedId);
+      updateMovieLikeDisplay(likedId, 1);
+      let blocked = false;
+      try{ blocked = (await isCurrentUserBanned()) || !(await checkSiteWriteRateLimit('writeRateLimit')); }catch(err){ blocked = false; }
+      if(blocked){ unmarkMovieLiked(likedId); updateMovieLikeDisplay(likedId, -1); return; }
+      try{
+        await fb.setDoc(fb.doc(fb.db, 'movies', likedId), { likes: fb.increment(1) }, { merge:true });
+      }catch(err){ console.error('movie like failed:', err); }
+    }
+    // いいねの表示を、詳細画面(開いていれば)・データ・カードの、3か所にまとめて反映する。
+    function updateMovieLikeDisplay(id, delta){
+      if(id === currentVideoId){
+        currentVideoLikes = Math.max(0, currentVideoLikes + delta);
+        likeCountEl.textContent = currentVideoLikes;
+      }
+      const video = videos.find(x => x.id === id);
+      if(video) video.likes = Math.max(0, normalizeLikes(video.likes) + delta);
+      const card = listEl.querySelector(`.movie-card[data-id="${id}"]`);
+      if(card){
+        const newVal = Math.max(0, (parseInt(card.dataset.likes, 10) || 0) + delta);
+        card.dataset.likes = newVal;
+        const span = card.querySelector('.movie-mini-like span');
+        if(span) span.textContent = newVal;
+      }
+    }
+    favBtn.addEventListener('click', ()=>{
+      if(!currentVideoId) return;
+      const video = videos.find(x => x.id === currentVideoId);
+      if(!video) return;
+      toggleMovieFavorite(video, { id: video.id, type:'movie', title: video.title, color: video.color, img: (video.url ? youtubeThumbUrl(video.url) : null) });
     });
 
     // いいね数は「0以上の整数」であるはずの値。万が一、データベースに

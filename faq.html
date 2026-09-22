@@ -1158,12 +1158,18 @@
   </div>
   <div class="bookmark-tabs">
     <button type="button" class="bookmark-tab active" data-bmtab="viewed">閲覧履歴</button>
+    <button type="button" class="bookmark-tab" data-bmtab="favorites">いいね欄</button>
     <button type="button" class="bookmark-tab" data-bmtab="achievements">実績一覧</button>
   </div>
 
   <div class="bookmark-panel" id="bookmarkViewedPanel">
     <div class="rewatch-list" id="rewatchList"></div>
     <p class="rewatch-empty" id="rewatchEmpty" hidden>まだ閲覧した作品がありません。</p>
+  </div>
+
+  <div class="bookmark-panel" id="bookmarkFavoritesPanel" hidden>
+    <div class="rewatch-list" id="favoritesList"></div>
+    <p class="rewatch-empty" id="favoritesEmpty" hidden>まだ、いいね(お気に入り)がありません。</p>
   </div>
 
   <div class="bookmark-panel" id="bookmarkAchievementsPanel" hidden>
@@ -2082,6 +2088,46 @@
         rewatchList.appendChild(item);
       });
     }
+    // 「いいね欄」(お気に入りの一覧)。表示・移動の仕組みは、閲覧履歴とほぼ同じなので、
+    // サムネイルの作り方(rewatchThumbHtml)を、共通の部品として、両方から使う。
+    function rewatchThumbHtml(entry){
+      const title = (isEnglish() && entry.titleEn) ? entry.titleEn : entry.title;
+      const fallbackColor = entry.color || 'linear-gradient(150deg,#726B5E,#4A453B)';
+      const imgIsSafe = entry.img && (entry.type !== 'fanart' || window.isAllowedMediaUrl(entry.img));
+      return imgIsSafe
+        ? `<img src="${escapeHtml(entry.img)}" alt="${escapeHtml(title)}" style="width:100%;height:100%;object-fit:cover;" loading="lazy" decoding="async" onerror="this.outerHTML='<div style=&quot;position:absolute;inset:0;background:${escapeHtml(fallbackColor)}&quot;></div>'">`
+        : `<div style="position:absolute;inset:0;background:${escapeHtml(fallbackColor)}"></div>`;
+    }
+    const favoritesList = document.getElementById('favoritesList');
+    const favoritesEmpty = document.getElementById('favoritesEmpty');
+    window.renderFavoritesList = function(){
+      if(!favoritesList || typeof window.FavModule === 'undefined') return;
+      const list = window.FavModule.list();
+      favoritesList.innerHTML = '';
+      favoritesEmpty.hidden = list.length > 0;
+      list.forEach(entry=>{
+        const title = (isEnglish() && entry.titleEn) ? entry.titleEn : entry.title;
+        const item = document.createElement('div');
+        item.className = 'rewatch-item';
+        item.innerHTML = `<div class="rewatch-thumb">${rewatchThumbHtml(entry)}</div><p>${escapeHtml(title)}</p>`;
+        item.addEventListener('click', ()=>{
+          rewatchCtl.close();
+          rewatchNavigate(entry);
+        });
+        favoritesList.appendChild(item);
+      });
+    };
+    // お気に入りの状態が変わるたび(お気に入りにした・外した、どちらでも)、
+    // 「いいね欄」が今開いていれば、その場で表示を更新する。
+    // FavModuleは、このページの中で、この時点よりあとに定義されるため、
+    // 定義が終わってから登録できるよう、少し遅らせる。
+    setTimeout(()=>{
+      window.FavModule.onChange(()=>{
+        const favPanel = document.getElementById('bookmarkFavoritesPanel');
+        if(favPanel && !favPanel.hidden) window.renderFavoritesList();
+      });
+    }, 0);
+
     const rewatchCtl = bindSheetModal(rewatchBackdrop, rewatchSheet, 400, renderRewatchList);
     navRewatch.addEventListener('click', (e)=>{
       e.preventDefault();
@@ -2204,13 +2250,16 @@
 
     const bookmarkTabs = document.querySelectorAll('.bookmark-tab');
     const viewedPanel = document.getElementById('bookmarkViewedPanel');
+    const favPanel = document.getElementById('bookmarkFavoritesPanel');
     const achPanel = document.getElementById('bookmarkAchievementsPanel');
     bookmarkTabs.forEach(tab=>{
       tab.addEventListener('click', ()=>{
         bookmarkTabs.forEach(t=> t.classList.toggle('active', t === tab));
         const which = tab.dataset.bmtab;
         viewedPanel.hidden = which !== 'viewed';
+        favPanel.hidden = which !== 'favorites';
         achPanel.hidden = which !== 'achievements';
+        if(which === 'favorites' && typeof window.renderFavoritesList === 'function') window.renderFavoritesList();
         if(which === 'achievements') renderAchievements();
       });
     });
@@ -2320,30 +2369,47 @@
     function saveLocalFavorites(set){
       try{ localStorage.setItem(FAV_KEY, JSON.stringify([...set])); }catch(e){}
     }
+    const FAV_ENTRIES_KEY = 'portfolio-favorite-entries';
+    function loadLocalFavoriteEntries(){
+      try{ return JSON.parse(localStorage.getItem(FAV_ENTRIES_KEY) || '{}'); }catch(e){ return {}; }
+    }
+    function saveLocalFavoriteEntries(entries){
+      try{ localStorage.setItem(FAV_ENTRIES_KEY, JSON.stringify(entries)); }catch(e){}
+    }
     const FavModule = (function(){
       let uid = null;
       let cache = loadLocalFavorites();
+      let entries = loadLocalFavoriteEntries();
       const listeners = [];
       function notify(){ listeners.forEach(fn=>{ try{ fn(cache); }catch(e){} }); }
       async function persist(){
         if(uid && window.__siteFirebase && window.__siteFirebase.ready && !window.__quotaExceeded){
           const fb = window.__siteFirebase;
-          try{ await fb.setDoc(fb.doc(fb.db, 'users', uid), { favorites: [...cache] }, { merge:true }); }
+          try{ await fb.setDoc(fb.doc(fb.db, 'users', uid), { favorites: [...cache], favoriteEntries: entries }, { merge:true }); }
           catch(err){
             console.error('favorites sync failed:', err);
             if(window.isQuotaError(err)) window.onQuotaExceeded();
             saveLocalFavorites(cache);
+            saveLocalFavoriteEntries(entries);
           }
         }else{
           saveLocalFavorites(cache);
+          saveLocalFavoriteEntries(entries);
         }
       }
       return {
         onChange(fn){ listeners.push(fn); fn(cache); },
         has(id){ return cache.has(id); },
         size(){ return cache.size; },
-        toggle(id){
-          if(cache.has(id)) cache.delete(id); else cache.add(id);
+        list(){ return [...cache].reverse().map(id => entries[id]).filter(Boolean); },
+        toggle(id, entry){
+          if(cache.has(id)){
+            cache.delete(id);
+            delete entries[id];
+          }else{
+            cache.add(id);
+            if(entry) entries[id] = entry;
+          }
           persist();
           notify();
           return cache.has(id);
@@ -2352,17 +2418,25 @@
           if(newUid){
             const fb = window.__siteFirebase;
             let remote = new Set();
+            let remoteEntries = {};
             try{
               const snap = await fb.getDoc(fb.doc(fb.db, 'users', newUid));
-              if(snap.exists() && Array.isArray(snap.data().favorites)) remote = new Set(snap.data().favorites);
+              if(snap.exists()){
+                const data = snap.data();
+                if(Array.isArray(data.favorites)) remote = new Set(data.favorites);
+                if(data.favoriteEntries && typeof data.favoriteEntries === 'object') remoteEntries = data.favoriteEntries;
+              }
             }catch(err){ console.error('failed to load account favorites:', err); }
             const local = loadLocalFavorites();
+            const localEntries = loadLocalFavoriteEntries();
             cache = new Set([...remote, ...local]);
+            entries = { ...localEntries, ...remoteEntries };
             uid = newUid;
             await persist();
           }else{
             uid = null;
             cache = loadLocalFavorites();
+            entries = loadLocalFavoriteEntries();
           }
           notify();
         }

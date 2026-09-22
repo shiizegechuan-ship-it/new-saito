@@ -2116,12 +2116,18 @@
   </div>
   <div class="bookmark-tabs">
     <button type="button" class="bookmark-tab active" data-bmtab="viewed">閲覧履歴</button>
+    <button type="button" class="bookmark-tab" data-bmtab="favorites">いいね欄</button>
     <button type="button" class="bookmark-tab" data-bmtab="achievements">実績一覧</button>
   </div>
 
   <div class="bookmark-panel" id="bookmarkViewedPanel">
     <div class="rewatch-list" id="rewatchList"></div>
     <p class="rewatch-empty" id="rewatchEmpty" hidden>まだ閲覧した作品がありません。</p>
+  </div>
+
+  <div class="bookmark-panel" id="bookmarkFavoritesPanel" hidden>
+    <div class="rewatch-list" id="favoritesList"></div>
+    <p class="rewatch-empty" id="favoritesEmpty" hidden>まだ、いいね(お気に入り)がありません。</p>
   </div>
 
   <div class="bookmark-panel" id="bookmarkAchievementsPanel" hidden>
@@ -2537,31 +2543,53 @@
     try{ localStorage.setItem(FAV_KEY, JSON.stringify([...set])); }catch(e){}
   }
 
+  const FAV_ENTRIES_KEY = 'portfolio-favorite-entries';
+  function loadLocalFavoriteEntries(){
+    try{ return JSON.parse(localStorage.getItem(FAV_ENTRIES_KEY) || '{}'); }catch(e){ return {}; }
+  }
+  function saveLocalFavoriteEntries(entries){
+    try{ localStorage.setItem(FAV_ENTRIES_KEY, JSON.stringify(entries)); }catch(e){}
+  }
   const FavModule = (function(){
     let uid = null;
     let cache = loadLocalFavorites();
+    // お気に入り(いいね)にした時点の、表示に必要な情報(タイトル・種類・画像など)。
+    // 「いいね欄」に一覧で出すために使う。この仕組みを追加する前からのお気に入りには無いので、
+    // その分は一覧に出ない(お気に入りの状態自体は、そのまま引き継がれる)。
+    let entries = loadLocalFavoriteEntries();
     const listeners = [];
     function notify(){ listeners.forEach(fn=>{ try{ fn(cache); }catch(e){} }); }
     async function persist(){
       if(uid && window.__siteFirebase && window.__siteFirebase.ready && !window.__quotaExceeded){
         const fb = window.__siteFirebase;
         try{
-          await fb.setDoc(fb.doc(fb.db, 'users', uid), { favorites: [...cache] }, { merge:true });
+          await fb.setDoc(fb.doc(fb.db, 'users', uid), { favorites: [...cache], favoriteEntries: entries }, { merge:true });
         }catch(err){
           console.error('favorites sync failed:', err);
           if(window.isQuotaError(err)) window.onQuotaExceeded();
           saveLocalFavorites(cache); // 同期できない間は、せめて端末内には保存しておく
+          saveLocalFavoriteEntries(entries);
         }
       }else{
         saveLocalFavorites(cache);
+        saveLocalFavoriteEntries(entries);
       }
     }
     return {
       onChange(fn){ listeners.push(fn); fn(cache); },
       has(id){ return cache.has(id); },
       size(){ return cache.size; },
-      toggle(id){
-        if(cache.has(id)) cache.delete(id); else cache.add(id);
+      // 「いいね欄」に出すための、表示情報つきの一覧(新しくお気に入りにしたものが先頭)。
+      list(){ return [...cache].reverse().map(id => entries[id]).filter(Boolean); },
+      // entry(表示情報)は、新しくお気に入りにする時だけ渡す。外す時は、記録も一緒に消える。
+      toggle(id, entry){
+        if(cache.has(id)){
+          cache.delete(id);
+          delete entries[id];
+        }else{
+          cache.add(id);
+          if(entry) entries[id] = entry;
+        }
         persist();
         notify();
         return cache.has(id);
@@ -2570,17 +2598,25 @@
         if(newUid){
           const fb = window.__siteFirebase;
           let remote = new Set();
+          let remoteEntries = {};
           try{
             const snap = await fb.getDoc(fb.doc(fb.db, 'users', newUid));
-            if(snap.exists() && Array.isArray(snap.data().favorites)) remote = new Set(snap.data().favorites);
+            if(snap.exists()){
+              const data = snap.data();
+              if(Array.isArray(data.favorites)) remote = new Set(data.favorites);
+              if(data.favoriteEntries && typeof data.favoriteEntries === 'object') remoteEntries = data.favoriteEntries;
+            }
           }catch(err){ console.error('failed to load account favorites:', err); }
           const local = loadLocalFavorites();
+          const localEntries = loadLocalFavoriteEntries();
           cache = new Set([...remote, ...local]); // 初回ログイン時、端末内のお気に入りをアカウントへ統合する
+          entries = { ...localEntries, ...remoteEntries }; // 両方にある場合は、アカウント側を優先する
           uid = newUid;
           await persist();
         }else{
           uid = null;
           cache = loadLocalFavorites();
+          entries = loadLocalFavoriteEntries();
         }
         notify();
       }
@@ -2610,6 +2646,10 @@
     { id:'font-giant', name:'大目付', desc:'文字の大きさを、最大にする。', type:'normal' },
     { id:'mega-collector', name:'大数寄者', desc:'お気に入りを、合計10個以上登録する。', type:'normal' }
   ];
+  // 運営者専用の称号。実績の一覧には出さず(誰でも取れるものではないため)、
+  // 運営者本人がログインした時に、自動で名乗る。
+  const OWNER_TITLE_ID = 'admin-title';
+  const OWNER_TITLE_NAME = '管理人';
 
   // ご自身(サイト運営者)のGoogleアカウントには、人数限定のユニーク実績が配布されないようにする。
   // Firebaseプロジェクトを作成し、一度ご自身のアカウントでログインした後、
@@ -2635,6 +2675,8 @@
       isLoggedIn(){ return !!uid; },
       has(id){ return unlocked.has(id); },
       getTitle(){ return titleId; },
+      // 実績の一覧(window.ACHIEVEMENTS)には無い、運営者専用の称号。画面の表示で使う。
+      getOwnerTitle(){ return (uid === OWNER_UID) ? { id:OWNER_TITLE_ID, name:OWNER_TITLE_NAME } : null; },
 
       async setUser(newUid){
         uid = newUid;
@@ -2649,6 +2691,11 @@
                 const data = snap.data();
                 if(Array.isArray(data.achievements)) unlocked = new Set(data.achievements);
                 if(data.titleAchievement) titleId = data.titleAchievement;
+                // 運営者本人には、ログインするたびに、自動で「管理人」の称号を名乗らせる。
+                if(uid === OWNER_UID){
+                  unlocked.add(OWNER_TITLE_ID);
+                  if(!titleId) titleId = OWNER_TITLE_ID;
+                }
               }
             }catch(err){ console.error('failed to load achievements:', err); }
           }
@@ -2779,9 +2826,9 @@
       .catch(()=>{});
   }
 
-  function toggleFavorite(id, btn, countEl){
+  function toggleFavorite(id, btn, countEl, entry){
     const willBeActive = !FavModule.has(id);
-    FavModule.toggle(id);
+    FavModule.toggle(id, willBeActive ? entry : undefined);
     if(willBeActive){
       incrementLikeCountOnce(id, countEl);
       btn.classList.remove('fav-pop');
@@ -2842,7 +2889,8 @@
     fetchLikeCount(w.id, countEl);
     favBtn.addEventListener('click', (e)=>{
       e.stopPropagation();
-      toggleFavorite(w.id, favBtn, countEl);
+      const entry = { id: w.id, type:'work', title: w.title, titleEn: w.titleEn, color: w.color, img: w.img };
+      toggleFavorite(w.id, favBtn, countEl, entry);
     });
     card.addEventListener('click', (e)=>{
       if(e.target.closest('.fav-btn')) return;
@@ -3530,6 +3578,42 @@
         rewatchList.appendChild(item);
       });
     }
+    // 「いいね欄」(お気に入りの一覧)。表示・移動の仕組みは、閲覧履歴とほぼ同じなので、
+    // サムネイルの作り方(rewatchThumbHtml)を、共通の部品として、両方から使う。
+    function rewatchThumbHtml(entry){
+      const title = (isEnglish() && entry.titleEn) ? entry.titleEn : entry.title;
+      const fallbackColor = entry.color || 'linear-gradient(150deg,#726B5E,#4A453B)';
+      const imgIsSafe = entry.img && (entry.type !== 'fanart' || window.isAllowedMediaUrl(entry.img));
+      return imgIsSafe
+        ? `<img src="${escapeHtml(entry.img)}" alt="${escapeHtml(title)}" style="width:100%;height:100%;object-fit:cover;" loading="lazy" decoding="async" onerror="this.outerHTML='<div style=&quot;position:absolute;inset:0;background:${escapeHtml(fallbackColor)}&quot;></div>'">`
+        : `<div style="position:absolute;inset:0;background:${escapeHtml(fallbackColor)}"></div>`;
+    }
+    const favoritesList = document.getElementById('favoritesList');
+    const favoritesEmpty = document.getElementById('favoritesEmpty');
+    window.renderFavoritesList = function(){
+      if(!favoritesList || typeof window.FavModule === 'undefined') return;
+      const list = window.FavModule.list();
+      favoritesList.innerHTML = '';
+      favoritesEmpty.hidden = list.length > 0;
+      list.forEach(entry=>{
+        const title = (isEnglish() && entry.titleEn) ? entry.titleEn : entry.title;
+        const item = document.createElement('div');
+        item.className = 'rewatch-item';
+        item.innerHTML = `<div class="rewatch-thumb">${rewatchThumbHtml(entry)}</div><p>${escapeHtml(title)}</p>`;
+        item.addEventListener('click', ()=>{
+          rewatchCtl.close();
+          rewatchNavigate(entry);
+        });
+        favoritesList.appendChild(item);
+      });
+    };
+    // お気に入りの状態が変わるたび(お気に入りにした・外した、どちらでも)、
+    // 「いいね欄」が今開いていれば、その場で表示を更新する。
+    window.FavModule.onChange(()=>{
+      const favPanel = document.getElementById('bookmarkFavoritesPanel');
+      if(favPanel && !favPanel.hidden) window.renderFavoritesList();
+    });
+
     const rewatchCtl = bindSheetModal(rewatchBackdrop, rewatchSheet, 400, renderRewatchList);
     navRewatch.addEventListener('click', (e)=>{
       e.preventDefault();
@@ -3652,13 +3736,16 @@
 
     const bookmarkTabs = document.querySelectorAll('.bookmark-tab');
     const viewedPanel = document.getElementById('bookmarkViewedPanel');
+    const favPanel = document.getElementById('bookmarkFavoritesPanel');
     const achPanel = document.getElementById('bookmarkAchievementsPanel');
     bookmarkTabs.forEach(tab=>{
       tab.addEventListener('click', ()=>{
         bookmarkTabs.forEach(t=> t.classList.toggle('active', t === tab));
         const which = tab.dataset.bmtab;
         viewedPanel.hidden = which !== 'viewed';
+        favPanel.hidden = which !== 'favorites';
         achPanel.hidden = which !== 'achievements';
+        if(which === 'favorites' && typeof window.renderFavoritesList === 'function') window.renderFavoritesList();
         if(which === 'achievements') renderAchievements();
       });
     });
@@ -4734,11 +4821,19 @@
 
     let activePointers = 0;
     function decrementPointer(){ activePointers = Math.max(0, activePointers - 1); }
+    // この印は、内部で少し重い処理(にじみのような質感)を使うため、連続でタップすると、
+    // 処理が詰まって画面が一瞬固まり、たまってから、まとめて表示されてしまう。
+    // それを防ぐため、直前の表示から一定の間隔をあけて、多すぎる場合は出さないようにする。
+    const STAMP_MIN_INTERVAL_MS = 220;
+    let lastStampAt = 0;
     document.addEventListener('pointerdown', (e)=>{
       activePointers++;
       if(!e.isPrimary) return;
       if(activePointers > 1) return;
       if(e.button !== undefined && e.button !== 0) return;
+      const now = performance.now();
+      if(now - lastStampAt < STAMP_MIN_INTERVAL_MS) return;
+      lastStampAt = now;
       spawnStamp(e.clientX, e.clientY);
     });
     document.addEventListener('pointerup', decrementPointer);
@@ -5317,7 +5412,10 @@
       const badge = document.getElementById('titleBadge');
       if(!badge) return;
       const titleId = (typeof AchievementModule !== 'undefined') ? AchievementModule.getTitle() : null;
-      const def = titleId ? window.ACHIEVEMENTS.find(a => a.id === titleId) : null;
+      // 「管理人」は、実績の一覧(window.ACHIEVEMENTS)には無い、運営者専用の称号。
+      const ownerTitle = (typeof AchievementModule !== 'undefined') ? AchievementModule.getOwnerTitle() : null;
+      const def = (ownerTitle && titleId === ownerTitle.id) ? { name: ownerTitle.name, type:'owner' }
+        : titleId ? window.ACHIEVEMENTS.find(a => a.id === titleId) : null;
       badge.classList.remove('unique', 'top-rank');
       if(def){
         badge.textContent = '【' + def.name + '】';
