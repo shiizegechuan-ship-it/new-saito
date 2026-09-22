@@ -1706,8 +1706,10 @@
         <summary class="i18n" data-en="How to get the image URL (especially from X)">画像URLの取得方法(主にXの場合)</summary>
         <ol>
           <li class="i18n" data-en="Post your fan art on X (Twitter) as usual.">いつも通り、Xに投稿してください。</li>
+          <li class="i18n" data-en="If you're viewing the post in the X app, this next part won't work there. Tap the share icon (square with an arrow) on the post and choose “Open in Safari” (or your browser) from the share sheet — the rest of these steps are done in the browser, not the app.">Xの公式アプリで見ている場合、このあとの手順はアプリの中ではできません。投稿の共有ボタン(四角に矢印のアイコン)をタップし、出てきたメニューから「Safariで開く」(お使いのブラウザで開く)を選んで、ブラウザに切り替えてから、続きを行ってください。</li>
           <li class="i18n" data-en="Open that post, and tap/click on the image itself to view it larger.">その投稿を開き、画像そのものをタップ(クリック)して、拡大表示にします。</li>
-          <li class="i18n" data-en="Then, on a phone or iPad, long-press the enlarged image; on a desktop, right-click it. Choose “Copy Image” or “Copy Image Address” (the exact wording differs by device).">スマホやiPadなら長押し、デスクトップなら右クリックし、「画像をコピー」または「画像のアドレスをコピー」(表記は端末により異なります)を選んでください。</li>
+          <li class="i18n" data-en="Then, on a phone or iPad, long-press the enlarged image; on a desktop, right-click it. Choose “Copy Image Address” (may also be labeled “Copy Link” — the exact wording differs by device/browser).">スマホやiPadなら長押し、デスクトップなら右クリックし、「画像のアドレスをコピー」(「リンクをコピー」と出ることもあります)を選んでください。</li>
+          <li class="i18n" data-en="Important: “Copy Image” is different — it copies the picture itself, not a link, and cannot be pasted below. If you only see “Copy Image” (this happens on some phones), instead choose “Open Image” / “Open Image in New Tab” to open the image by itself, then long-press (or tap) the address bar at the top and choose “Copy” to get its URL.">「画像をコピー」は別の操作です。これは絵そのものをコピーするもので、URL(文字)ではないため、下の欄には貼り付けられません。「画像のアドレスをコピー」が見当たらない場合(一部のスマホで起こります)は、代わりに「新しいタブで画像を開く」または「画像を開く」を選び、画像だけが表示された画面にしてから、上部のアドレスバーを長押し(またはタップ)して「コピー」を選ぶと、URLを取得できます。</li>
           <li class="i18n" data-en="Paste that copied address into the “Image URL” field below.">コピーしたアドレスを、下の「画像のURL」欄に貼り付けてください。</li>
         </ol>
         <p class="fanart-howto-note i18n" data-en="Note: pasting the post page's own URL (e.g. https://x.com/.../status/...) will not work — it must be the direct image address.">
@@ -1742,8 +1744,8 @@
           <p class="fanart-preview-error i18n" data-en="This image couldn't be loaded. Please check the URL." id="fanartPreviewError" hidden>
             この画像を読み込めませんでした。URLをご確認ください。
           </p>
-          <p class="fanart-preview-error i18n" data-en="This looks like a link to the post (tweet) page itself, not the image. Open the post, then on a phone or iPad long-press the image (on a desktop, right-click it), and choose “Copy Image” or “Copy Image Address” to get a direct pbs.twimg.com link." id="fanartPreviewTweetHint" hidden>
-            これは、投稿ページ(ツイート)そのもののリンクのようです。画像そのもののURLではありません。投稿を開き、スマホやiPadなら長押し(デスクトップなら右クリック)して、「画像をコピー」または「画像のアドレスをコピー」を選ぶと、pbs.twimg.comから始まる、画像そのもののURLが取得できます。
+          <p class="fanart-preview-error i18n" data-en="This looks like a link to the post (tweet) page itself, not the image. Open the post, then on a phone or iPad long-press the enlarged image (on a desktop, right-click it), and choose “Copy Image Address” (not “Copy Image” — that copies the picture itself, not a link). See the guide above for what to do if that option isn't shown." id="fanartPreviewTweetHint" hidden>
+            これは、投稿ページ(ツイート)そのもののリンクのようです。画像そのもののURLではありません。投稿を開き、スマホやiPadなら長押し(デスクトップなら右クリック)して「画像のアドレスをコピー」を選んでください(「画像をコピー」は、絵そのものをコピーする、別の操作です)。この項目が出ない場合は、上の「画像URLの取得方法」もご覧ください。
           </p>
         </div>
         <div class="fanart-field">
@@ -4045,7 +4047,7 @@
         submitBtn.disabled = false;
         if(!loads){
           if(isTweetPageUrl(url)){
-            alert('これは、投稿ページ(ツイート)そのもののリンクのようです。画像そのもののURLではありません。\n\n投稿を開き、スマホやiPadなら長押し(デスクトップなら右クリック)して、「画像をコピー」または「画像のアドレスをコピー」を選ぶと、pbs.twimg.comから始まる、画像そのもののURLが取得できます。');
+            alert('これは、投稿ページ(ツイート)そのもののリンクのようです。画像そのもののURLではありません。\n\n投稿を開き、スマホやiPadなら長押し(デスクトップなら右クリック)して「画像のアドレスをコピー」を選んでください(「画像をコピー」は、絵そのものをコピーする、別の操作です)。\n\nこの項目が出ない場合は、フォーム上部の「画像URLの取得方法」をご覧ください。');
           }else{
             alert('この画像を読み込めませんでした。URLをご確認ください。');
           }
