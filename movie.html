@@ -41,7 +41,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, limit, serverTimestamp, runTransaction, increment, orderBy } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, addDoc, query, where, limit, serverTimestamp, runTransaction, increment, orderBy } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
   // ここに、ご自身のFirebaseプロジェクトの設定値を入力してください。
   // (他のページと、同じ値を入れてください。)
@@ -60,7 +60,7 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
     const provider = new GoogleAuthProvider();
-    window.__siteFirebase = { auth, db, provider, signInWithPopup, signOut, onAuthStateChanged, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, limit, serverTimestamp, runTransaction, increment, orderBy, ready:true };
+    window.__siteFirebase = { auth, db, provider, signInWithPopup, signOut, onAuthStateChanged, doc, getDoc, setDoc, deleteDoc, collection, getDocs, addDoc, query, where, limit, serverTimestamp, runTransaction, increment, orderBy, ready:true };
   }catch(err){
     console.error('Firebase init failed:', err);
     window.__siteFirebase = { ready:false };
@@ -1117,6 +1117,37 @@
   .lb-text p:not(.meta){ font-size:calc(14px * var(--font-scale, 1)); color:var(--sumi); line-height:1.95; margin-bottom:24px; }
   
   .lb-comments{ margin-top:1px; padding-top:24px; border-top:1px solid var(--line); }
+
+  /* 自前のコメント欄(Disqusの代わり)。 */
+  .own-comments{ margin-top:8px; }
+  .own-comments-list{ display:flex; flex-direction:column; gap:16px; margin-bottom:20px; }
+  .own-comment-item{ padding-bottom:14px; border-bottom:1px solid var(--line); }
+  .own-comment-head{ display:flex; align-items:baseline; gap:10px; margin-bottom:4px; }
+  .own-comment-name{ font-family:var(--f-mincho); font-size:calc(13px * var(--font-scale, 1)); color:var(--sumi); }
+  .own-comment-date{ font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi); }
+  .own-comment-text{ font-size:calc(13px * var(--font-scale, 1)); color:var(--sumi); white-space:pre-wrap; word-break:break-word; margin:0; }
+  .own-comment-delete{
+    margin-top:6px; font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi);
+    background:none; border:none; text-decoration:underline; cursor:pointer; padding:0;
+  }
+  .own-comments-empty{ font-size:calc(12px * var(--font-scale, 1)); color:var(--usuzumi); margin-bottom:20px; }
+  .own-comment-form textarea{
+    width:100%; box-sizing:border-box; font-family:inherit; font-size:calc(13px * var(--font-scale, 1));
+    color:var(--sumi); background:var(--kinari-2); border:1px solid var(--line); border-radius:6px;
+    padding:10px 12px; resize:vertical; min-height:70px;
+  }
+  .own-comment-form-row{ display:flex; align-items:center; gap:12px; margin-top:8px; flex-wrap:wrap; }
+  .own-comment-submit{
+    font-family:var(--f-gothic); font-size:calc(13px * var(--font-scale, 1)); color:var(--kinari);
+    background:var(--bengara); border:none; border-radius:20px; padding:9px 22px; cursor:pointer;
+  }
+  .own-comment-submit:disabled{ opacity:.5; cursor:default; }
+  .own-comment-count-note{ font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi); }
+  .own-comment-login-note{ font-size:calc(12px * var(--font-scale, 1)); color:var(--usuzumi); }
+  .own-comment-login-note a, .own-comment-login-note button{
+    color:var(--bengara); background:none; border:none; text-decoration:underline; cursor:pointer;
+    font:inherit; padding:0;
+  }
   
   .lb-comments-label{
     font-family:var(--f-mincho); font-size:calc(13px * var(--font-scale, 1)); letter-spacing:.1em;
@@ -1460,7 +1491,22 @@
       <p id="movieLbDesc"></p>
       <div class="lb-comments">
         <p class="lb-comments-label i18n" data-en="Comments">感想・コメント</p>
-        <div id="disqus_thread"></div>
+        <div class="own-comments">
+          <div class="own-comments-list" id="ownCommentsList" hidden></div>
+          <p class="own-comments-empty i18n" data-en="No comments yet." id="ownCommentsEmpty" hidden>まだ、コメントはありません。</p>
+          <div class="own-comment-form" id="ownCommentForm" hidden>
+            <textarea id="ownCommentText" maxlength="300" placeholder="感想を書く…"></textarea>
+            <div class="own-comment-form-row">
+              <button type="button" class="own-comment-submit" id="ownCommentSubmitBtn">
+                <span class="i18n" data-en="Post">コメントする</span>
+              </button>
+              <span class="own-comment-count-note" id="ownCommentNote"></span>
+            </div>
+          </div>
+          <p class="own-comment-login-note" id="ownCommentLoginNote" hidden>
+            コメントするには、<button type="button" id="ownCommentLoginBtn">Googleでログイン</button>してください。
+          </p>
+        </div>
       </div>
       <div class="lb-related" id="movieLbRelated" hidden>
         <p class="lb-related-label i18n" data-en="Related works">関連する映像</p>
@@ -2621,7 +2667,6 @@
     bgmAudio.addEventListener('pause', ()=> setPlayingUi(false));
   }catch(err){ console.error('bgm init failed:', err); }
 
-  window.DISQUS_SHORTNAME = 'oshitemairu';
 
   try{
     // お気に入り(サイト共通):ログインしていない間は端末内、ログインするとアカウントに同期する。
@@ -2707,6 +2752,124 @@
       };
     })();
     window.FavModule = FavModule;
+
+  // 自前のコメント欄(Disqusの代わり)。Googleでログインした人(または運営者)だけが投稿できる。
+  (function(){
+    const listEl = document.getElementById('ownCommentsList');
+    const emptyEl = document.getElementById('ownCommentsEmpty');
+    const formEl = document.getElementById('ownCommentForm');
+    const textEl = document.getElementById('ownCommentText');
+    const submitBtn = document.getElementById('ownCommentSubmitBtn');
+    const noteEl = document.getElementById('ownCommentNote');
+    const loginNoteEl = document.getElementById('ownCommentLoginNote');
+    const loginBtn = document.getElementById('ownCommentLoginBtn');
+    if(!listEl) return;
+    let currentItemKey = null;
+
+    function formatDate(ms){
+      try{ return new Date(ms).toLocaleString('ja-JP', { year:'numeric', month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }); }
+      catch(e){ return ''; }
+    }
+
+    async function renderComments(itemKey){
+      currentItemKey = itemKey;
+      const fb = window.__siteFirebase;
+      listEl.innerHTML = '';
+      listEl.hidden = true;
+      emptyEl.hidden = true;
+      const loggedIn = !!(fb && fb.auth && fb.auth.currentUser);
+      formEl.hidden = !loggedIn;
+      loginNoteEl.hidden = loggedIn;
+      if(!fb || !fb.ready) return;
+      try{
+        const q = fb.query(fb.collection(fb.db, 'comments'), fb.where('itemKey', '==', itemKey), fb.orderBy('createdAt', 'desc'), fb.limit(200));
+        const snap = await fb.getDocs(q);
+        if(snap.empty){ emptyEl.hidden = false; return; }
+        emptyEl.hidden = true;
+        listEl.hidden = false;
+        const myUid = fb.auth && fb.auth.currentUser ? fb.auth.currentUser.uid : null;
+        snap.forEach(d=>{
+          const data = d.data();
+          if(currentItemKey !== itemKey) return; // 読み込み中に、別の作品へ切り替わっていたら、古い結果は捨てる
+          const createdAt = data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate().getTime() : new Date(data.createdAt).getTime()) : 0;
+          const canDelete = myUid && (myUid === data.authorUid || (typeof OWNER_UID !== 'undefined' && myUid === OWNER_UID));
+          const el = document.createElement('div');
+          el.className = 'own-comment-item';
+          el.innerHTML = `
+            <div class="own-comment-head">
+              <span class="own-comment-name">${escapeHtml(data.authorName || '名無しさん')}</span>
+              <span class="own-comment-date">${escapeHtml(formatDate(createdAt))}</span>
+            </div>
+            <p class="own-comment-text">${escapeHtml(data.text || '')}</p>
+            ${canDelete ? '<button type="button" class="own-comment-delete">削除</button>' : ''}`;
+          if(canDelete){
+            el.querySelector('.own-comment-delete').addEventListener('click', async ()=>{
+              if(!window.confirm('このコメントを削除しますか?')) return;
+              try{
+                await fb.deleteDoc(fb.doc(fb.db, 'comments', d.id));
+                el.remove();
+                if(!listEl.children.length){ listEl.hidden = true; emptyEl.hidden = false; }
+              }catch(err){ console.error('comment delete failed:', err); alert('削除に失敗しました。'); }
+            });
+          }
+          listEl.appendChild(el);
+        });
+      }catch(err){ console.error('load comments failed:', err); }
+    }
+
+    if(loginBtn){
+      loginBtn.addEventListener('click', ()=>{
+        const btn = document.getElementById('loginBtn');
+        if(btn) btn.click();
+        else{
+          const settingsBtn = document.getElementById('settingsToggle');
+          if(settingsBtn) settingsBtn.click();
+        }
+      });
+    }
+
+    submitBtn.addEventListener('click', async ()=>{
+      const fb = window.__siteFirebase;
+      noteEl.textContent = '';
+      if(!fb || !fb.ready || !fb.auth.currentUser || !currentItemKey) return;
+      const text = (typeof window.stripInvisibleChars === 'function' ? window.stripInvisibleChars(textEl.value.trim()) : textEl.value.trim());
+      if(!text){ noteEl.textContent = 'コメントを入力してください。'; return; }
+      if(text.length > 300){ noteEl.textContent = 'コメントは、300字以内にしてください。'; return; }
+      if(typeof window.containsCodeLikeContent === 'function' && window.containsCodeLikeContent(text)){
+        noteEl.textContent = 'コードのような文字列は入力できません。';
+        return;
+      }
+      if(typeof window.isCurrentUserBanned === 'function' && await window.isCurrentUserBanned()){
+        noteEl.textContent = 'このアカウントは、一部の操作を停止されています。';
+        return;
+      }
+      if(typeof window.checkSiteWriteRateLimit === 'function' && !(await window.checkSiteWriteRateLimit('writeRateLimit'))){
+        noteEl.textContent = 'サイトが混み合っております。しばらくお待ちください。';
+        return;
+      }
+      submitBtn.disabled = true;
+      try{
+        const nickname = (typeof currentNickname !== 'undefined' && currentNickname) ? currentNickname : (fb.auth.currentUser.displayName || '名無しさん');
+        await fb.addDoc(fb.collection(fb.db, 'comments'), {
+          itemKey: currentItemKey,
+          text: text,
+          authorUid: fb.auth.currentUser.uid,
+          authorName: String(nickname).slice(0, 20),
+          createdAt: fb.serverTimestamp()
+        });
+        textEl.value = '';
+        renderComments(currentItemKey);
+      }catch(err){
+        console.error('comment post failed:', err);
+        noteEl.textContent = '投稿に失敗しました。時間をおいて、もう一度お試しください。';
+      }finally{
+        submitBtn.disabled = false;
+      }
+    });
+
+    window.renderOwnComments = renderComments;
+  })();
+
 
     // 実績システム。ログインしている間だけ有効。
     window.ACHIEVEMENTS = [
@@ -2856,30 +3019,7 @@
     let currentVideoId = null;
 
     function renderCommentsFor(id, title){
-      // コメント欄(Disqus)は外部サービスなので、失敗しても、作品の詳細を開く処理を止めないようにする。
-      try{
-        const pageUrl = location.origin + location.pathname + '#movie-' + id;
-        if(window.DISQUS && typeof window.DISQUS.reset === 'function'){
-          window.DISQUS.reset({
-            reload:true,
-            config:function(){ this.page.identifier = 'movie-' + id; this.page.url = pageUrl; this.page.title = title; }
-          });
-        }else{
-          window.disqus_config = function(){
-            this.page.url = pageUrl;
-            this.page.identifier = 'movie-' + id;
-            this.page.title = title;
-          };
-          const s = document.createElement('script');
-          s.src = 'https://' + window.DISQUS_SHORTNAME + '.disqus.com/embed.js';
-          s.setAttribute('data-timestamp', String(+new Date()));
-          // 二重に読み込まないようにする。読み込み中は、次に開いた作品の設定だけを更新しておく。
-          if(!window.__disqusEmbedRequested){
-            window.__disqusEmbedRequested = true;
-            (document.head || document.body).appendChild(s);
-          }
-        }
-      }catch(err){ console.error('comments init failed:', err); }
+      if(typeof window.renderOwnComments === 'function') window.renderOwnComments('movie:' + id);
     }
 
     function likedMovieIds(){
@@ -3188,6 +3328,7 @@
           const addedVideos = [];
           addedSnap.forEach(d=>{
             const data = d.data();
+            if(data.deleted) return; // 削除済み(魚拓に保管中)の作品は、一覧には出さない
             addedVideos.push({ id: d.id, title: data.title || '', year: data.year || '', color: data.color || 'linear-gradient(150deg,#726B5E,#4A453B)', url: data.url || '', desc: data.desc || '', likes: normalizeLikes(data.likes) });
           });
           videos = [...addedVideos, ...videos];

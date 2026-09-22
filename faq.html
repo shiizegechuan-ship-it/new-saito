@@ -41,7 +41,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, limit, orderBy, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, limit, orderBy, where, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
   // ここに、ご自身のFirebaseプロジェクトの設定値を入力してください。
   // (他のページと、同じ値を入れてください。)
@@ -60,7 +60,7 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
     const provider = new GoogleAuthProvider();
-    window.__siteFirebase = { auth, db, provider, signInWithPopup, signOut, onAuthStateChanged, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, limit, orderBy, serverTimestamp, runTransaction, ready:true };
+    window.__siteFirebase = { auth, db, provider, signInWithPopup, signOut, onAuthStateChanged, doc, getDoc, setDoc, deleteDoc, collection, getDocs, query, limit, orderBy, where, serverTimestamp, runTransaction, ready:true };
   }catch(err){
     console.error('Firebase init failed:', err);
     window.__siteFirebase = { ready:false };
@@ -1275,7 +1275,7 @@
 
       <div class="guidelines-panel" id="guidelinesSite">
         <p class="guidelines-subtitle i18n" data-en="Guidelines">ガイドライン</p>
-        <div class="guideline-list">
+        <div class="guideline-list" id="guidelineListSite">
           <div class="guideline-item reveal">
             <p class="guideline-q i18n" data-en="Copyright">著作権について</p>
             <p class="guideline-a i18n" data-en="The copyright of all works published on this site (illustrations, music, text, etc.) belongs to the creator, 鴛照昧琉. Reproduction, redistribution, or claiming a work as your own without permission is not allowed.">
@@ -1314,7 +1314,7 @@
       </div>
 
       <div class="guidelines-panel" id="guidelinesRequest" hidden>
-        <div class="guideline-list">
+        <div class="guideline-list" id="guidelineListRequest">
           <div class="guideline-item reveal">
             <p class="guideline-q i18n" data-en="Streaming" >配信でのご利用について</p>
             <p class="guideline-a i18n" data-en="When using a work in a video or live stream, crediting the creator's name is required. Games may be streamed without prior confirmation. For any other creative work (illustrations, music, etc.), please contact me by email in advance, and only use it after receiving permission.">
@@ -2076,6 +2076,40 @@
       document.addEventListener('site-firebase-ready', loadAllRequestStatusText, { once:true });
     }
   }catch(err){ console.error('request status display init failed:', err); }
+
+  try{
+    // 運営者が、管理画面から後から追加したガイドラインの項目を読み込み、
+    // 「サイト内」「ご依頼」それぞれの一覧の末尾(「最後に」の直前)に足す。
+    async function loadGuidelineItems(section, listId){
+      const fb = window.__siteFirebase;
+      const list = document.getElementById(listId);
+      if(!fb || !fb.ready || !list) return;
+      try{
+        const snap = await fb.getDocs(fb.query(fb.collection(fb.db, 'guidelineItems'), fb.where('section', '==', section)));
+        const items = [];
+        snap.forEach(d => items.push(d.data()));
+        if(!items.length) return;
+        items.sort((a, b)=> (a.order || 0) - (b.order || 0));
+        // 一覧の最後にある項目(「最後に」)の、すぐ手前に差し込む。
+        const anchor = list.lastElementChild;
+        items.forEach(item=>{
+          const el = document.createElement('div');
+          el.className = 'guideline-item reveal in';
+          el.innerHTML = `<p class="guideline-q">${escapeHtml(item.question)}</p><p class="guideline-a">${escapeHtml(item.answer)}</p>`;
+          if(anchor) list.insertBefore(el, anchor); else list.appendChild(el);
+        });
+      }catch(err){ console.error('load guideline items failed (' + section + '):', err); }
+    }
+    function loadAllGuidelineItems(){
+      loadGuidelineItems('site', 'guidelineListSite');
+      loadGuidelineItems('request', 'guidelineListRequest');
+    }
+    if(window.__siteFirebase && window.__siteFirebase.ready !== undefined){
+      loadAllGuidelineItems();
+    }else{
+      document.addEventListener('site-firebase-ready', loadAllGuidelineItems, { once:true });
+    }
+  }catch(err){ console.error('guideline items display init failed:', err); }
 
   try{
     // ファンアート由来の画像URLを表示する直前に必ず通す、簡易版の安全確認。

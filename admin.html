@@ -827,6 +827,23 @@
   }
   
   @media (max-width:600px){ .admin-works-form-grid{ grid-template-columns:1fr; } }
+
+  .admin-category-buttons{ display:flex; flex-wrap:wrap; gap:8px; margin-top:6px; }
+  .admin-category-btn{
+    font-family:var(--f-gothic); font-size:calc(13px * var(--font-scale, 1)); color:var(--sumi);
+    background:var(--kinari-2); border:1px solid var(--line); border-radius:20px;
+    padding:7px 14px; cursor:pointer; transition:border-color .25s ease, color .25s ease;
+  }
+  .admin-category-btn[aria-pressed="true"]{ border-color:var(--bengara); color:var(--bengara); background:rgba(163,68,48,.08); }
+  .admin-translate-row{ display:flex; align-items:center; gap:8px; margin-top:6px; }
+  .admin-translate-btn{
+    font-family:var(--f-gothic); font-size:calc(12px * var(--font-scale, 1)); color:var(--usuzumi);
+    background:var(--kinari-2); border:1px solid var(--line); border-radius:6px;
+    padding:5px 10px; cursor:pointer; white-space:nowrap;
+  }
+  .admin-translate-btn:disabled{ opacity:.5; cursor:default; }
+  .admin-translate-note{ font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi); }
+  .admin-publish-note{ font-size:calc(12px * var(--font-scale, 1)); color:var(--usuzumi); margin:6px 0 0; }
   
 
   .admin-works-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:20px; max-width:920px; }
@@ -1145,6 +1162,7 @@
         <button type="button" class="admin-tab" data-tab="movies">映像</button>
         <button type="button" class="admin-tab" data-tab="requestStatus">ご依頼設定</button>
         <button type="button" class="admin-tab" data-tab="announcements">声明</button>
+        <button type="button" class="admin-tab" data-tab="archive">削除済み</button>
       </div>
 
       <div class="admin-panel-body" id="adminRequestStatusPanel" hidden>
@@ -1163,7 +1181,7 @@
         </div>
         <label class="admin-works-form-full" id="existingWorkStatusTextLabel" hidden>
           <span>受付中に表示する文章</span>
-          <textarea id="existingWorkStatusText" rows="4">既に公開している作品(イラスト・曲・文章など)を、商用目的でご利用になりたい場合は、事前に必ずメールにてご確認をお願いいたします。金額などの詳細は、ご利用内容に応じて個別にご相談させていただきます。</textarea>
+          <textarea id="existingWorkStatusText" rows="4" maxlength="800">既に公開している作品(イラスト・曲・文章など)を、商用目的でご利用になりたい場合は、事前に必ずメールにてご確認をお願いいたします。金額などの詳細は、ご利用内容に応じて個別にご相談させていただきます。</textarea>
         </label>
         <button type="button" class="btn-line press-fill" id="existingWorkStatusSaveBtn">
           <span>保存する</span>
@@ -1183,7 +1201,7 @@
         </div>
         <label class="admin-works-form-full" id="requestStatusTextLabel" hidden>
           <span>受付中に表示する文章</span>
-          <textarea id="requestStatusText" rows="10">新しくイラストなどを描き下ろす、オーダーメイドのご依頼も承っております。
+          <textarea id="requestStatusText" rows="10" maxlength="800">新しくイラストなどを描き下ろす、オーダーメイドのご依頼も承っております。
 
 用途やサイズによって変動しますが、目安として、アイコン・小さめのイラストで5,000円〜、1枚絵のイラストで20,000円〜となります。楽曲制作は、尺や編成により変動しますので、お気軽にお見積もりをご相談ください。
 
@@ -1195,6 +1213,42 @@
           <span>保存する</span>
         </button>
         <p class="admin-works-form-note" id="requestStatusNote" hidden></p>
+
+        <p class="admin-works-form-title" style="font-size:calc(13px * var(--font-scale, 1)); margin-top:40px;">
+          サイト内ガイドラインの項目(追加分)
+        </p>
+        <p class="admin-works-form-note" style="display:block;">
+          「サイト内」タブの一覧に、末尾から追加されます。見出し(40字まで)と、本文(600字まで)。
+        </p>
+        <label class="admin-works-form-full"><span>見出し</span><input type="text" id="guidelineSiteQ" maxlength="40"></label>
+        <label class="admin-works-form-full"><span>本文</span><textarea id="guidelineSiteA" rows="3" maxlength="600"></textarea></label>
+        <button type="button" class="btn-line press-fill" id="guidelineSiteAddBtn"><span>この項目を追加する</span></button>
+        <p class="admin-works-form-note" id="guidelineSiteNote" hidden></p>
+        <div class="admin-list" id="guidelineSiteList" hidden></div>
+        <p class="admin-empty" id="guidelineSiteEmpty" hidden>追加した項目は、ありません。</p>
+
+        <p class="admin-works-form-title" style="font-size:calc(13px * var(--font-scale, 1)); margin-top:40px;">
+          ご依頼ガイドラインの項目(追加分)
+        </p>
+        <p class="admin-works-form-note" style="display:block;">
+          「ご依頼」タブの一覧に、末尾から追加されます。見出し(40字まで)と、本文(600字まで)。
+        </p>
+        <label class="admin-works-form-full"><span>見出し</span><input type="text" id="guidelineRequestQ" maxlength="40"></label>
+        <label class="admin-works-form-full"><span>本文</span><textarea id="guidelineRequestA" rows="3" maxlength="600"></textarea></label>
+        <button type="button" class="btn-line press-fill" id="guidelineRequestAddBtn"><span>この項目を追加する</span></button>
+        <p class="admin-works-form-note" id="guidelineRequestNote" hidden></p>
+        <div class="admin-list" id="guidelineRequestList" hidden></div>
+        <p class="admin-empty" id="guidelineRequestEmpty" hidden>追加した項目は、ありません。</p>
+      </div>
+
+      <div class="admin-panel-body" id="adminArchivePanel" hidden>
+        <p class="admin-works-form-title">
+          サイト内で削除されたもの(作品・音楽・小説・映像・ファンアート投稿)を、一定期間ここに残しています。
+          間違えて消してしまった時は、「復元」で元に戻せます。削除から30日以上たったものは、「完全に削除」で、記録ごと消せます。
+        </p>
+        <div class="admin-list" id="archiveList" hidden></div>
+        <p class="admin-empty" id="archiveEmpty" hidden>削除されたものは、ありません。</p>
+        <p class="admin-loading" id="archiveLoading" hidden>読み込み中…</p>
       </div>
 
       <div class="admin-panel-body" id="adminAnnouncementsPanel" hidden>
@@ -1248,14 +1302,36 @@
           <p class="admin-works-form-title">新しい作品を追加</p>
           <div class="admin-works-form-grid">
             <label>タイトル(日本語)<input type="text" id="workTitleJa" required></label>
-            <label>タイトル(英語)<input type="text" id="workTitleEn" required></label>
-            <label>カテゴリ<input type="text" id="workSub" placeholder="Illustration / Music など" required></label>
-            <label>年<input type="text" id="workYear" placeholder="2026" required></label>
+            <label>
+              タイトル(英語)<input type="text" id="workTitleEn" required>
+              <div class="admin-translate-row">
+                <button type="button" class="admin-translate-btn" data-translate-from="workTitleJa" data-translate-to="workTitleEn">英語に自動翻訳</button>
+                <span class="admin-translate-note" data-translate-status-for="workTitleEn"></span>
+              </div>
+            </label>
+            <label>
+              カテゴリ
+              <input type="hidden" id="workSub" value="Illustration">
+              <div class="admin-category-buttons" id="workCategoryButtons">
+                <button type="button" class="admin-category-btn" data-category="Illustration" aria-pressed="true">イラスト</button>
+              </div>
+            </label>
+            <label>
+              公開日時(空欄なら、今すぐ公開)
+              <input type="datetime-local" id="workPublishAt">
+              <p class="admin-publish-note">未来の日時を指定すると、予約投稿になります。その時刻になるまで、サイトには表示されません。</p>
+            </label>
             <label>画像URL(任意・空欄なら色見本)<input type="url" id="workImg" placeholder="https://..."></label>
             <label>背景色(画像を使わない場合)<input type="text" id="workColor" placeholder="linear-gradient(150deg,#2B4A5C,#1D3644)" value="linear-gradient(150deg,#2B4A5C,#1D3644)"></label>
           </div>
           <label class="admin-works-form-full">説明文(日本語)<textarea id="workDescJa" rows="2" required></textarea></label>
-          <label class="admin-works-form-full">説明文(英語)<textarea id="workDescEn" rows="2" required></textarea></label>
+          <label class="admin-works-form-full">
+            説明文(英語)<textarea id="workDescEn" rows="2" required></textarea>
+            <div class="admin-translate-row">
+              <button type="button" class="admin-translate-btn" data-translate-from="workDescJa" data-translate-to="workDescEn">英語に自動翻訳</button>
+              <span class="admin-translate-note" data-translate-status-for="workDescEn"></span>
+            </div>
+          </label>
           <details class="admin-pickup-setting" id="workPickupSetting" hidden>
             <summary>ピックアップに載った際のサムネ設定(任意)</summary>
             <p class="admin-pickup-hint">
@@ -2261,6 +2337,91 @@
       }
     }
 
+    // --- 削除済み(魚拓・アーカイブ) ---
+    const archiveList = document.getElementById('archiveList');
+    const archiveEmpty = document.getElementById('archiveEmpty');
+    const archiveLoading = document.getElementById('archiveLoading');
+    const ARCHIVE_COLLECTIONS = [
+      { name:'fanart',  label:'ファンアート' },
+      { name:'works',   label:'作品' },
+      { name:'music',   label:'音楽' },
+      { name:'novels',  label:'小説' },
+      { name:'movies',  label:'映像' }
+    ];
+    const ARCHIVE_KEEP_DAYS = 30;
+    function archiveItemTitle(collectionName, item){
+      if(collectionName === 'fanart') return item.title || item.name || '名無しさん';
+      return item.title || '(タイトルなし)';
+    }
+    async function loadArchive(){
+      const fb = window.__adminFirebase;
+      if(!fb || !fb.ready){ archiveLoading.hidden = true; archiveEmpty.hidden = false; archiveEmpty.textContent = '読み込みに失敗しました。'; return; }
+      archiveLoading.hidden = false;
+      archiveList.innerHTML = '';
+      archiveList.hidden = true;
+      try{
+        const results = await Promise.all(ARCHIVE_COLLECTIONS.map(async c=>{
+          const snap = await fb.getDocs(fb.query(fb.collection(fb.db, c.name), fb.orderBy('createdAt', 'desc'), fb.limit(500)));
+          const items = [];
+          snap.forEach(d=>{
+            const data = d.data();
+            if(data.deleted) items.push({ collection:c.name, label:c.label, id:d.id, ...data });
+          });
+          return items;
+        }));
+        const all = results.flat().sort((a, b)=>{
+          const at = a.deletedAt ? (a.deletedAt.toDate ? a.deletedAt.toDate().getTime() : new Date(a.deletedAt).getTime()) : 0;
+          const bt = b.deletedAt ? (b.deletedAt.toDate ? b.deletedAt.toDate().getTime() : new Date(b.deletedAt).getTime()) : 0;
+          return bt - at;
+        });
+        archiveLoading.hidden = true;
+        if(!all.length){ archiveEmpty.hidden = false; return; }
+        archiveEmpty.hidden = true;
+        archiveList.hidden = false;
+        all.forEach(item=>{
+          const deletedAt = item.deletedAt ? (item.deletedAt.toDate ? item.deletedAt.toDate() : new Date(item.deletedAt)) : null;
+          const daysAgo = deletedAt ? (Date.now() - deletedAt.getTime()) / 86400000 : 0;
+          const byAdmin = item.deletedBy && item.authorUid && item.deletedBy !== item.authorUid;
+          const el = document.createElement('div');
+          el.className = 'admin-item';
+          el.innerHTML = `
+            <div class="admin-item-head">
+              <span class="admin-item-date">[${escapeHtml(item.label)}] ${escapeHtml(archiveItemTitle(item.collection, item))}</span>
+            </div>
+            <p class="admin-item-message">削除日時:${deletedAt ? escapeHtml(deletedAt.toLocaleString('ja-JP')) : '不明'}${item.authorUid ? `(削除した人:${byAdmin ? '運営者' : '投稿した本人'})` : ''}</p>
+            <div class="admin-item-actions">
+              <button type="button" data-action="restore">復元</button>
+              ${daysAgo >= ARCHIVE_KEEP_DAYS ? '<button type="button" data-action="purge">完全に削除</button>' : ''}
+            </div>`;
+          el.querySelector('[data-action="restore"]').addEventListener('click', async ()=>{
+            if(!window.confirm(`「${archiveItemTitle(item.collection, item)}」を復元しますか?`)) return;
+            try{
+              await fb.updateDoc(fb.doc(fb.db, item.collection, item.id), { deleted:false, deletedAt:null, deletedBy:null });
+              el.remove();
+              if(!archiveList.children.length){ archiveEmpty.hidden = false; archiveList.hidden = true; }
+            }catch(err){ console.error('restore failed:', err); alert('復元に失敗しました。'); }
+          });
+          const purgeBtn = el.querySelector('[data-action="purge"]');
+          if(purgeBtn){
+            purgeBtn.addEventListener('click', async ()=>{
+              if(!window.confirm(`「${archiveItemTitle(item.collection, item)}」を、完全に削除しますか?この操作は取り消せません。`)) return;
+              try{
+                await fb.deleteDoc(fb.doc(fb.db, item.collection, item.id));
+                el.remove();
+                if(!archiveList.children.length){ archiveEmpty.hidden = false; archiveList.hidden = true; }
+              }catch(err){ console.error('purge failed:', err); alert('削除に失敗しました。'); }
+            });
+          }
+          archiveList.appendChild(el);
+        });
+      }catch(err){
+        console.error('load archive failed:', err);
+        archiveLoading.hidden = true;
+        archiveEmpty.hidden = false;
+        archiveEmpty.textContent = '読み込みに失敗しました。';
+      }
+    }
+
     async function loadInquiries(){
       const fb = window.__adminFirebase;
       if(!fb || !fb.ready){ loadingEl.hidden = true; emptyEl.hidden = false; emptyEl.textContent = '読み込みに失敗しました。'; return; }
@@ -2361,8 +2522,12 @@
         if(snap.empty){ fanartEmpty.hidden = false; return; }
         fanartEmpty.hidden = true;
         fanartGrid.hidden = false;
+        // (件数の判定は、削除済みを除外した後、下のforEachが1件も無ければ、あらためて空欄にする)
+        let visibleCount = 0;
         snap.forEach(d=>{
           const item = d.data();
+          if(item.deleted) return; // 削除済み(魚拓に保管中)は、通常の一覧には出さない
+          visibleCount++;
           const card = document.createElement('div');
           card.className = 'admin-fanart-card';
           card.innerHTML = `
@@ -2379,9 +2544,11 @@
           card.querySelector('[data-action="delete"]').addEventListener('click', async ()=>{
             if(!window.confirm('この投稿を削除しますか?')) return;
             try{
-              await fb.deleteDoc(fb.doc(fb.db, 'fanart', d.id));
+              // 実際には消さず、「削除済み」として隠す(魚拓・アーカイブのため)。
+              await fb.updateDoc(fb.doc(fb.db, 'fanart', d.id), { deleted:true, deletedAt: fb.serverTimestamp(), deletedBy: fb.auth.currentUser.uid });
               card.remove();
-            }catch(err){ console.error('delete failed:', err); }
+              if(!fanartGrid.children.length){ fanartEmpty.hidden = false; fanartGrid.hidden = true; }
+            }catch(err){ console.error('delete failed:', err); alert('削除に失敗しました。'); }
           });
           if(item.authorUid){
             card.querySelector('[data-action="ban"]').addEventListener('click', async ()=>{
@@ -2394,6 +2561,7 @@
           }
           fanartGrid.appendChild(card);
         });
+        if(visibleCount === 0){ fanartEmpty.hidden = false; fanartGrid.hidden = true; }
       }catch(err){
         console.error('load fanart failed:', err);
         fanartLoading.hidden = true;
@@ -2487,7 +2655,7 @@
         const visibleHardcoded = HARDCODED_WORKS.filter(w => !hiddenIds.includes(w.id));
         const addedWorks = [];
         addedSnap.forEach(d => addedWorks.push({ id:d.id, ...d.data(), isFirestore:true }));
-        const all = [...visibleHardcoded, ...addedWorks];
+        const all = [...visibleHardcoded, ...addedWorks.filter(w => !w.deleted)];
         if(!all.length){ worksEmpty.hidden = false; return; }
         worksEmpty.hidden = true;
         worksGrid.hidden = false;
@@ -2498,14 +2666,19 @@
             <div class="admin-work-thumb">${w.img ? `<img src="${w.img}" alt="" loading="lazy" decoding="async">` : ''}</div>
             <div class="admin-work-info">
               <p class="admin-work-name">${escapeHtml(w.title)}</p>
-              <p class="admin-work-meta${w.isFirestore ? '' : ' hardcoded'}">${w.sub} / ${w.year}${w.isFirestore ? '' : '(既存作品)'}</p>
+              <p class="admin-work-meta${w.isFirestore ? '' : ' hardcoded'}">${w.sub} / ${w.year}${w.isFirestore ? '' : '(既存作品)'}${(()=>{
+                if(!w.publishedAt) return '';
+                const p = w.publishedAt.toDate ? w.publishedAt.toDate() : new Date(w.publishedAt);
+                return p.getTime() > Date.now() ? ` ・予約投稿(${escapeHtml(p.toLocaleString('ja-JP'))} に公開)` : '';
+              })()}</p>
               <div class="admin-work-actions"><button type="button">削除</button></div>
             </div>`;
           card.querySelector('button').addEventListener('click', async ()=>{
             if(!window.confirm(`「${w.title}」を削除しますか?`)) return;
             try{
               if(w.isFirestore){
-                await fb.deleteDoc(fb.doc(fb.db, 'works', w.id));
+                // 実際には消さず、「削除済み」として隠す(魚拓・アーカイブのため)。
+                await fb.updateDoc(fb.doc(fb.db, 'works', w.id), { deleted:true, deletedAt: fb.serverTimestamp(), deletedBy: fb.auth.currentUser.uid });
               }else{
                 const ids = await getHiddenWorkIds();
                 if(!ids.includes(w.id)) ids.push(w.id);
@@ -2574,6 +2747,46 @@
         img.src = url;
       });
     }
+    // カテゴリボタン(今は「イラスト」だけだが、増やせるように、ボタンの並びで管理する)。
+    const workCategoryButtons = document.querySelectorAll('#workCategoryButtons .admin-category-btn');
+    workCategoryButtons.forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        workCategoryButtons.forEach(b=> b.setAttribute('aria-pressed', String(b === btn)));
+        document.getElementById('workSub').value = btn.dataset.category;
+      });
+    });
+
+    // 日本語の欄から、英語への自動翻訳(MyMemory:無料・登録不要の翻訳サービス)。
+    // あくまで下書きなので、翻訳後も、自由に手で直せる(自動で上書きし続けることはしない)。
+    async function autoTranslateField(fromId, toId, statusEl){
+      const fromEl = document.getElementById(fromId);
+      const toEl = document.getElementById(toId);
+      const text = fromEl.value.trim();
+      if(!text){ if(statusEl) statusEl.textContent = '日本語の欄に、先に入力してください。'; return; }
+      if(statusEl) statusEl.textContent = '翻訳中…';
+      try{
+        const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=ja|en`);
+        const data = await res.json();
+        const translated = data && data.responseData && data.responseData.translatedText;
+        if(!translated) throw new Error('empty response');
+        toEl.value = translated;
+        if(statusEl) statusEl.textContent = '翻訳しました(必要に応じて、手で直してください)。';
+      }catch(err){
+        console.error('auto translate failed:', err);
+        if(statusEl) statusEl.textContent = '翻訳に失敗しました。お手数ですが、手入力をお願いします。';
+      }
+    }
+    document.querySelectorAll('.admin-translate-btn').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const fromId = btn.dataset.translateFrom;
+        const toId = btn.dataset.translateTo;
+        const statusEl = document.querySelector(`[data-translate-status-for="${toId}"]`);
+        btn.disabled = true;
+        await autoTranslateField(fromId, toId, statusEl);
+        btn.disabled = false;
+      });
+    });
+
     let workImgDebounce = null;
     document.getElementById('workImg').addEventListener('input', (e)=>{
       clearTimeout(workImgDebounce);
@@ -2607,11 +2820,17 @@
           return;
         }
       }
+      // 公開日時:入力があれば、それを使う(未来の日時なら、予約投稿になる)。
+      // 空欄なら、今すぐ公開したことにする(現在の日時)。
+      const publishAtInput = document.getElementById('workPublishAt').value;
+      const publishedAt = publishAtInput ? new Date(publishAtInput) : new Date();
+      const isScheduled = publishedAt.getTime() > Date.now();
       const data = {
         title: document.getElementById('workTitleJa').value.trim(),
         titleEn: document.getElementById('workTitleEn').value.trim(),
         sub: document.getElementById('workSub').value.trim(),
-        year: document.getElementById('workYear').value.trim(),
+        year: String(publishedAt.getFullYear()), // 並び替え・表示は、これまで通り「年」を使う
+        publishedAt: publishedAt,
         img: imgUrl,
         color: document.getElementById('workColor').value.trim(),
         desc: document.getElementById('workDescJa').value.trim(),
@@ -2623,10 +2842,15 @@
       };
       try{
         await fb.addDoc(fb.collection(fb.db, 'works'), data);
-        worksFormNote.textContent = '追加しました。サイト側は少し時間を置くと反映されます。';
+        worksFormNote.textContent = isScheduled
+          ? `予約投稿として追加しました。${publishedAt.toLocaleString('ja-JP')} に、サイトに表示されます。`
+          : '追加しました。サイト側は少し時間を置くと反映されます。';
         worksFormNote.hidden = false;
         worksForm.reset();
         document.getElementById('workColor').value = 'linear-gradient(150deg,#2B4A5C,#1D3644)';
+        document.getElementById('workSub').value = 'Illustration';
+        workCategoryButtons.forEach(b=> b.setAttribute('aria-pressed', String(b.dataset.category === 'Illustration')));
+        document.querySelectorAll('.admin-translate-note').forEach(el=> el.textContent = '');
         resetWorkPickupSetting();
         worksLoaded = false;
         loadWorks();
@@ -2666,7 +2890,7 @@
           const visibleHardcoded = hardcoded.filter(w => !hiddenIds.includes(w.id));
           const added = [];
           addedSnap.forEach(d => added.push({ id:d.id, ...d.data(), isFirestore:true }));
-          const all = [...visibleHardcoded, ...added];
+          const all = [...visibleHardcoded, ...added.filter(item => !item.deleted)];
           if(!all.length){ emptyEl.hidden = false; return; }
           emptyEl.hidden = true;
           gridEl.hidden = false;
@@ -2684,7 +2908,8 @@
               if(!window.confirm(`「${item.title}」を削除しますか?`)) return;
               try{
                 if(item.isFirestore){
-                  await fb.deleteDoc(fb.doc(fb.db, collectionName, item.id));
+                  // 実際には消さず、「削除済み」として隠す(魚拓・アーカイブのため)。
+                  await fb.updateDoc(fb.doc(fb.db, collectionName, item.id), { deleted:true, deletedAt: fb.serverTimestamp(), deletedBy: fb.auth.currentUser.uid });
                 }else{
                   const ids = await getHiddenIds();
                   if(!ids.includes(item.id)) ids.push(item.id);
@@ -2825,6 +3050,8 @@
     let requestStatusLoaded = false;
     const announcementsPanel = document.getElementById('adminAnnouncementsPanel');
     let announcementLogLoaded = false;
+    const archivePanel = document.getElementById('adminArchivePanel');
+    let archiveLoaded = false;
     tabButtons.forEach(btn=>{
       btn.addEventListener('click', ()=>{
         tabButtons.forEach(b=> b.classList.toggle('active', b === btn));
@@ -2838,6 +3065,7 @@
         moviesPanel.hidden = tab !== 'movies';
         requestStatusPanel.hidden = tab !== 'requestStatus';
         announcementsPanel.hidden = tab !== 'announcements';
+        archivePanel.hidden = tab !== 'archive';
         if(tab === 'fanart' && !fanartLoaded){ fanartLoaded = true; loadFanart(); }
         if(tab === 'banned' && !bannedLoaded){ bannedLoaded = true; loadBanned(); }
         if(tab === 'works' && !worksLoaded){ worksLoaded = true; loadWorks(); }
@@ -2846,6 +3074,7 @@
         if(tab === 'movies' && !moviesManager.loaded){ moviesManager.loaded = true; moviesManager.load(); }
         if(tab === 'requestStatus' && !requestStatusLoaded){ requestStatusLoaded = true; loadRequestStatus(); }
         if(tab === 'announcements' && !announcementLogLoaded){ announcementLogLoaded = true; loadAnnouncementLog(); }
+        if(tab === 'archive' && !archiveLoaded){ archiveLoaded = true; loadArchive(); }
       });
     });
 
@@ -2887,6 +3116,11 @@
           noteEl.hidden = false;
           return;
         }
+        if(text.length > 800){
+          noteEl.textContent = '文章は、800字以内にしてください。';
+          noteEl.hidden = false;
+          return;
+        }
         try{
           await fb.setDoc(fb.doc(fb.db, 'siteConfig', docId), { accepting, text }, { merge:true });
           noteEl.textContent = '保存しました。サイト側は少し時間を置くと反映されます。';
@@ -2901,9 +3135,113 @@
     }
     const loadExistingWorkStatus = wireRequestStatusToggle('existingWorkStatus', 'existingWorkStatus');
     const loadOrderMadeStatus = wireRequestStatusToggle('requestStatus', 'requestStatus');
+
+    // ガイドラインページ(FAQ)の、サイト内・ご依頼それぞれに、
+    // あとから追加した項目を管理する(追加・並び替え・削除)。
+    function makeGuidelineManager(section, ids){
+      const qInput = document.getElementById(ids.q);
+      const aInput = document.getElementById(ids.a);
+      const addBtn = document.getElementById(ids.addBtn);
+      const noteEl = document.getElementById(ids.note);
+      const listEl = document.getElementById(ids.list);
+      const emptyEl = document.getElementById(ids.empty);
+      let loaded = false;
+
+      async function load(){
+        const fb = window.__adminFirebase;
+        if(!fb || !fb.ready) return;
+        try{
+          const snap = await fb.getDocs(fb.query(fb.collection(fb.db, 'guidelineItems'), fb.where('section', '==', section)));
+          const items = [];
+          snap.forEach(d => items.push({ id:d.id, ...d.data() }));
+          items.sort((a, b)=> (a.order || 0) - (b.order || 0));
+          listEl.innerHTML = '';
+          if(!items.length){ emptyEl.hidden = false; listEl.hidden = true; return; }
+          emptyEl.hidden = true;
+          listEl.hidden = false;
+          items.forEach((item, idx)=>{
+            const el = document.createElement('div');
+            el.className = 'admin-item';
+            el.innerHTML = `
+              <div class="admin-item-head"><span class="admin-item-date">${escapeHtml(item.question)}</span></div>
+              <p class="admin-item-message">${escapeHtml(item.answer)}</p>
+              <div class="admin-item-actions">
+                <button type="button" data-action="up" ${idx === 0 ? 'disabled' : ''}>上へ</button>
+                <button type="button" data-action="down" ${idx === items.length - 1 ? 'disabled' : ''}>下へ</button>
+                <button type="button" data-action="delete">削除</button>
+              </div>`;
+            el.querySelector('[data-action="delete"]').addEventListener('click', async ()=>{
+              if(!window.confirm(`「${item.question}」を削除しますか?`)) return;
+              try{ await fb.deleteDoc(fb.doc(fb.db, 'guidelineItems', item.id)); load(); }
+              catch(err){ console.error('guideline delete failed:', err); alert('削除に失敗しました。'); }
+            });
+            el.querySelector('[data-action="up"]').addEventListener('click', async ()=>{
+              const other = items[idx - 1];
+              try{
+                await fb.updateDoc(fb.doc(fb.db, 'guidelineItems', item.id), { order: other.order });
+                await fb.updateDoc(fb.doc(fb.db, 'guidelineItems', other.id), { order: item.order });
+                load();
+              }catch(err){ console.error('guideline reorder failed:', err); }
+            });
+            el.querySelector('[data-action="down"]').addEventListener('click', async ()=>{
+              const other = items[idx + 1];
+              try{
+                await fb.updateDoc(fb.doc(fb.db, 'guidelineItems', item.id), { order: other.order });
+                await fb.updateDoc(fb.doc(fb.db, 'guidelineItems', other.id), { order: item.order });
+                load();
+              }catch(err){ console.error('guideline reorder failed:', err); }
+            });
+            listEl.appendChild(el);
+          });
+        }catch(err){ console.error('load guidelines failed (' + section + '):', err); }
+      }
+      addBtn.addEventListener('click', async ()=>{
+        const fb = window.__adminFirebase;
+        noteEl.hidden = true;
+        if(!fb || !fb.ready) return;
+        const question = qInput.value.trim();
+        const answer = aInput.value.trim();
+        if(!question || !answer){
+          noteEl.textContent = '見出しと、本文の両方を入力してください。';
+          noteEl.hidden = false;
+          return;
+        }
+        if((typeof window.containsCodeLikeContent === 'function') && (window.containsCodeLikeContent(question) || window.containsCodeLikeContent(answer))){
+          noteEl.textContent = 'コードのような文字列は入力できません。';
+          noteEl.hidden = false;
+          return;
+        }
+        addBtn.disabled = true;
+        try{
+          const snap = await fb.getDocs(fb.query(fb.collection(fb.db, 'guidelineItems'), fb.where('section', '==', section)));
+          let maxOrder = -1;
+          snap.forEach(d=>{ const o = d.data().order || 0; if(o > maxOrder) maxOrder = o; });
+          await fb.addDoc(fb.collection(fb.db, 'guidelineItems'), {
+            section, question, answer, order: maxOrder + 1, createdAt: fb.serverTimestamp()
+          });
+          qInput.value = '';
+          aInput.value = '';
+          noteEl.textContent = '追加しました。サイト側は少し時間を置くと反映されます。';
+          noteEl.hidden = false;
+          load();
+        }catch(err){
+          console.error('guideline add failed:', err);
+          noteEl.textContent = '追加に失敗しました。時間をおいて再度お試しください。';
+          noteEl.hidden = false;
+        }finally{
+          addBtn.disabled = false;
+        }
+      });
+      return function(){ if(!loaded){ loaded = true; load(); } };
+    }
+    const loadGuidelineSite = makeGuidelineManager('site', { q:'guidelineSiteQ', a:'guidelineSiteA', addBtn:'guidelineSiteAddBtn', note:'guidelineSiteNote', list:'guidelineSiteList', empty:'guidelineSiteEmpty' });
+    const loadGuidelineRequest = makeGuidelineManager('request', { q:'guidelineRequestQ', a:'guidelineRequestA', addBtn:'guidelineRequestAddBtn', note:'guidelineRequestNote', list:'guidelineRequestList', empty:'guidelineRequestEmpty' });
+
     function loadRequestStatus(){
       loadExistingWorkStatus();
       loadOrderMadeStatus();
+      loadGuidelineSite();
+      loadGuidelineRequest();
     }
 
     // メールでのログイン確認(パスワードの前段階に追加した、もう1つの鍵)。
