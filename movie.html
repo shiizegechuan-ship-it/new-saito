@@ -985,6 +985,17 @@
   
   .works-sort-select:focus{ outline:none; border-color:var(--bengara); }
 
+  /* 表示の切り替え(正方形の一覧 / 1つずつ)。並び替えの欄の横に置く。 */
+  .works-view-toggle{ display:flex; gap:6px; flex:none; }
+  .works-view-btn{
+    width:38px; height:38px; display:flex; align-items:center; justify-content:center;
+    background:var(--kinari-2); border:1px solid var(--line); border-radius:8px; color:var(--sumi);
+    cursor:pointer; transition:border-color .3s ease, color .3s ease;
+  }
+  .works-view-btn svg{ width:17px; height:17px; stroke:currentColor; fill:none; }
+  .works-view-btn:hover, .works-view-btn:focus-visible{ border-color:var(--bengara); color:var(--bengara); outline:none; }
+  .works-view-btn[aria-pressed="true"]{ border-color:var(--bengara); color:var(--bengara); background:rgba(163,68,48,.08); }
+
   /* 作品の種類(イラスト・音楽・小説・映像)。それぞれのページへのリンク。今いるページは、色つきの枠で示す。 */
   .works-type-links{ display:flex; gap:8px; flex-wrap:wrap; }
   .works-type-link{
@@ -1002,6 +1013,15 @@
   }
   
   .movie-card{ cursor:pointer; }
+
+  /* 表示切り替え:正方形の一覧(既定)。サムネイルを正方形にし、縦2列、説明文を短くする。 */
+  .movie-list.view-grid{ grid-template-columns:repeat(2,1fr) !important; gap:18px 16px !important; }
+  .movie-list.view-grid .movie-thumb{ aspect-ratio:1 !important; }
+  .movie-list.view-grid .movie-card-meta{ display:none; }
+  .movie-list.view-grid .movie-card-title{
+    margin-top:8px; font-size:calc(13px * var(--font-scale, 1));
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
   
   .movie-thumb{
     position:relative; aspect-ratio:16/9; border-radius:2px; overflow:hidden;
@@ -1295,7 +1315,12 @@
       <span class="settings-row-label">声明</span>
       <button type="button" class="btn-line press-fill" id="announceLogBtn"><span>管理人ログ</span></button>
     </div>
+  </div>  <div class="site-search-panel" id="siteSearchPanel" hidden>
+    <input type="search" id="siteSearchInput" class="site-search-input" maxlength="20" placeholder="サイト内を検索..." aria-label="サイト内検索">
+    <ul class="site-search-results" id="siteSearchResults"></ul>
+    <p class="site-search-empty" id="siteSearchEmpty" hidden>一致する内容が見つかりませんでした。</p>
   </div>
+</header>
   <div class="bottom-sheet-backdrop" id="announceLogBackdrop" hidden></div>
   <div class="bottom-sheet" id="announceLogSheet" hidden aria-label="管理人ログ">
     <div class="bottom-sheet-handle"></div>
@@ -1308,12 +1333,6 @@
     <div id="announceLogList"></div>
     <p id="announceLogEmptyMsg" hidden>まだ、声明はありません。</p>
   </div>
-  <div class="site-search-panel" id="siteSearchPanel" hidden>
-    <input type="search" id="siteSearchInput" class="site-search-input" maxlength="20" placeholder="サイト内を検索..." aria-label="サイト内検索">
-    <ul class="site-search-results" id="siteSearchResults"></ul>
-    <p class="site-search-empty" id="siteSearchEmpty" hidden>一致する内容が見つかりませんでした。</p>
-  </div>
-</header>
 
 <svg class="rain-ripples" id="rainRipples" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -1415,6 +1434,10 @@
           <option value="popular">人気順</option>
           <option value="title">タイトル順</option>
         </select>
+        <div class="works-view-toggle" role="group" aria-label="表示の切り替え">
+          <button type="button" class="works-view-btn" data-view="grid" aria-label="正方形の一覧で見る" aria-pressed="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button>
+          <button type="button" class="works-view-btn" data-view="list" aria-label="1つずつ見る" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="5" rx="1"/><rect x="3" y="14" width="18" height="5" rx="1"/></svg></button>
+        </div>
       </div>
       <div class="movie-list" id="movieList"></div>
     </div>
@@ -3067,6 +3090,20 @@
     renderMovieList();
 
     const movieSortSelect = document.getElementById('movieSort');
+    // 表示の切り替え(正方形の一覧=既定 / 1つずつ)。選んだ内容は、次にページを開いた時も覚えておく。
+    const MOVIE_VIEW_PREF_KEY = 'movie-view-pref';
+    const movieViewBtns = document.querySelectorAll('.works-view-btn');
+    function applyMovieView(mode){
+      listEl.classList.toggle('view-grid', mode === 'grid');
+      movieViewBtns.forEach(b=> b.setAttribute('aria-pressed', String(b.dataset.view === mode)));
+      try{ localStorage.setItem(MOVIE_VIEW_PREF_KEY, mode); }catch(e){}
+    }
+    movieViewBtns.forEach(b=>{
+      b.addEventListener('click', ()=> applyMovieView(b.dataset.view));
+    });
+    let savedMovieView = 'grid';
+    try{ savedMovieView = localStorage.getItem(MOVIE_VIEW_PREF_KEY) || 'grid'; }catch(e){}
+    applyMovieView(savedMovieView);
     // 並び替え(新しい順・古い順・人気順・タイトル順)。
     // 作品の種類(イラスト・音楽・小説・映像)は、それぞれのページへのリンクにしたため、ここでは絞り込みをしない。
     function applyMovieFilterSort(){

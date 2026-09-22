@@ -1309,7 +1309,12 @@
       <span class="settings-row-label">声明</span>
       <button type="button" class="btn-line press-fill" id="announceLogBtn"><span>管理人ログ</span></button>
     </div>
+  </div>  <div class="site-search-panel" id="siteSearchPanel" hidden>
+    <input type="search" id="siteSearchInput" class="site-search-input" maxlength="20" placeholder="サイト内を検索..." aria-label="サイト内検索">
+    <ul class="site-search-results" id="siteSearchResults"></ul>
+    <p class="site-search-empty" id="siteSearchEmpty" hidden>一致する内容が見つかりませんでした。</p>
   </div>
+</header>
   <div class="bottom-sheet-backdrop" id="announceLogBackdrop" hidden></div>
   <div class="bottom-sheet" id="announceLogSheet" hidden aria-label="管理人ログ">
     <div class="bottom-sheet-handle"></div>
@@ -1322,12 +1327,6 @@
     <div id="announceLogList"></div>
     <p id="announceLogEmptyMsg" hidden>まだ、声明はありません。</p>
   </div>
-  <div class="site-search-panel" id="siteSearchPanel" hidden>
-    <input type="search" id="siteSearchInput" class="site-search-input" maxlength="20" placeholder="サイト内を検索..." aria-label="サイト内検索">
-    <ul class="site-search-results" id="siteSearchResults"></ul>
-    <p class="site-search-empty" id="siteSearchEmpty" hidden>一致する内容が見つかりませんでした。</p>
-  </div>
-</header>
 
 <svg class="rain-ripples" id="rainRipples" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
   <defs>
