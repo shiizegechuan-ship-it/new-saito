@@ -2119,9 +2119,17 @@
           textJa:'映像 動画 制作した映像作品を紹介するページ',
           textEn:'Movie video works I have created' },
       ];
+      if(typeof window.videosData !== 'undefined'){
+        window.videosData.forEach((v)=>{
+          index.push({
+            section:'Movie', sectionEn:'Movie', anchor:'#movie', videoId:v.id,
+            textJa:`${v.title} ${v.year}`,
+            textEn:`${v.title} ${v.year}`
+          });
+        });
+      }
       return index;
     }
-    const siteIndex = buildSiteIndex();
 
     function snippetFor(entry){
       const text = isEnglish() ? entry.textEn : entry.textJa;
@@ -2154,6 +2162,8 @@
       }
       const q = query.toLowerCase();
       const queryVariants = expandQuery(q);
+      // 検索するたびに、その時点の最新の内容(あとから追加された作品を含む)で、作り直す。
+      const siteIndex = buildSiteIndex();
       const scored = siteIndex.map(entry=>{
         const haystack = (entry.textJa + ' ' + entry.textEn).toLowerCase();
         const bestScore = Math.max(...queryVariants.map(v => fuzzyScore(v, haystack)));
@@ -3236,6 +3246,7 @@
         card.addEventListener('click', ()=> openLightbox(video));
         listEl.appendChild(card);
       });
+      window.videosData = videos;
     }
     renderMovieList();
 

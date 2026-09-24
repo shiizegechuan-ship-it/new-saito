@@ -2110,9 +2110,17 @@
           textJa:'映像 動画 制作した映像作品を紹介するページ',
           textEn:'Movie video works I have created' },
       ];
+      if(typeof window.tracksData !== 'undefined'){
+        window.tracksData.forEach((t)=>{
+          index.push({
+            section:'Music', sectionEn:'Music', anchor:'#music', trackId:t.id,
+            textJa:`${t.title} ${t.year}`,
+            textEn:`${t.title} ${t.year}`
+          });
+        });
+      }
       return index;
     }
-    const siteIndex = buildSiteIndex();
 
     function snippetFor(entry){
       const text = isEnglish() ? entry.textEn : entry.textJa;
@@ -2145,6 +2153,9 @@
       }
       const q = query.toLowerCase();
       const queryVariants = expandQuery(q);
+      // 検索するたびに、その時点の最新の内容(あとから追加された曲を含む)で、作り直す。
+      // (負荷はごく軽い処理のため、毎回作り直しても問題ない。)
+      const siteIndex = buildSiteIndex();
       const scored = siteIndex.map(entry=>{
         const haystack = (entry.textJa + ' ' + entry.textEn).toLowerCase();
         const bestScore = Math.max(...queryVariants.map(v => fuzzyScore(v, haystack)));
@@ -3223,6 +3234,7 @@
         card.querySelector('.music-cover').addEventListener('click', ()=> openLightbox(track));
         listEl.appendChild(card);
       });
+      window.tracksData = tracks;
     }
     renderMusicList();
 

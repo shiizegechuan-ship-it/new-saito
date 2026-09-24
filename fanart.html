@@ -2500,9 +2500,21 @@
           textJa:'映像 動画 制作した映像作品を紹介するページ',
           textEn:'Movie video works I have created' },
       ];
+      // R18の投稿は、この一覧に含めない(検索欄からは、年齢確認をしていなくても
+      // 使えてしまうため。年齢確認が済んだ人が、実際にR18タブを開いて、投稿を
+      // 一度読み込んだあとであれば、その投稿も、対象に含まれる)。
+      if(typeof window.fanartItemsData !== 'undefined'){
+        window.fanartItemsData.forEach((it)=>{
+          if(it.isR18) return;
+          index.push({
+            section:'ファンアート', sectionEn:'Fan Art', anchor:'#fanart', fanartId:it.id,
+            textJa:`${it.title || ''} ${it.name || ''}`,
+            textEn:`${it.title || ''} ${it.name || ''}`
+          });
+        });
+      }
       return index;
     }
-    const siteIndex = buildSiteIndex();
 
     function snippetFor(entry){
       const text = isEnglish() ? entry.textEn : entry.textJa;
@@ -2535,6 +2547,8 @@
       }
       const q = query.toLowerCase();
       const queryVariants = expandQuery(q);
+      // 検索するたびに、その時点の最新の内容(今表示している投稿を含む)で、作り直す。
+      const siteIndex = buildSiteIndex();
       const scored = siteIndex.map(entry=>{
         const haystack = (entry.textJa + ' ' + entry.textEn).toLowerCase();
         const bestScore = Math.max(...queryVariants.map(v => fuzzyScore(v, haystack)));
@@ -3854,6 +3868,7 @@
       const cached = getGalleryCache(currentTab);
       if(cached){
         loadingMsg.hidden = true;
+        window.fanartItemsData = cached; // 検索の対象に、今表示している投稿を含めるため
         if(cached.length === 0){ emptyMsg.hidden = false; return; }
         cached.forEach(item => renderCard(item));
         if(typeof window.refreshFanartFilterSort === 'function') window.refreshFanartFilterSort();
@@ -3890,6 +3905,7 @@
           items.push({ id:d.id, ...data, createdAt: createdAtMs });
         });
         setGalleryCache(currentTab, items);
+        window.fanartItemsData = items; // 検索の対象に、今表示している投稿を含めるため
         if(items.length === 0){ emptyMsg.hidden = false; return; }
         items.forEach(item => renderCard(item));
         if(typeof window.refreshFanartFilterSort === 'function') window.refreshFanartFilterSort();

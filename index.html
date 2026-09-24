@@ -3698,7 +3698,6 @@
         }
         return index;
       }
-      const siteIndex = buildSiteIndex();
   
       function snippetFor(entry){
         const text = isEnglish() ? entry.textEn : entry.textJa;
@@ -3741,6 +3740,8 @@
         }
         const q = query.toLowerCase();
         const queryVariants = expandQuery(q);
+        // 検索するたびに、その時点の最新の内容(あとから追加された作品を含む)で、作り直す。
+        const siteIndex = buildSiteIndex();
         const scored = siteIndex.map(entry=>{
           const haystack = (entry.textJa + ' ' + entry.textEn).toLowerCase();
           // 複数の言い換え候補それぞれで採点し、一番良かったスコアを採用する。

@@ -2112,9 +2112,17 @@
           textJa:'映像 動画 制作した映像作品を紹介するページ',
           textEn:'Movie video works I have created' },
       ];
+      if(typeof window.storiesData !== 'undefined'){
+        window.storiesData.forEach((st)=>{
+          index.push({
+            section:'Novel', sectionEn:'Novel', anchor:'#novel', storyId:st.id,
+            textJa:`${st.title} ${st.year} ${st.excerpt || ''}`,
+            textEn:`${st.title} ${st.year}`
+          });
+        });
+      }
       return index;
     }
-    const siteIndex = buildSiteIndex();
 
     function snippetFor(entry){
       const text = isEnglish() ? entry.textEn : entry.textJa;
@@ -2147,6 +2155,8 @@
       }
       const q = query.toLowerCase();
       const queryVariants = expandQuery(q);
+      // 検索するたびに、その時点の最新の内容(あとから追加された作品を含む)で、作り直す。
+      const siteIndex = buildSiteIndex();
       const scored = siteIndex.map(entry=>{
         const haystack = (entry.textJa + ' ' + entry.textEn).toLowerCase();
         const bestScore = Math.max(...queryVariants.map(v => fuzzyScore(v, haystack)));
@@ -3226,6 +3236,7 @@
         card.querySelector('.novel-cover').addEventListener('click', ()=> openLightbox(story));
         listEl.appendChild(card);
       });
+      window.storiesData = stories;
     }
     renderNovelList();
 
