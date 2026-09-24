@@ -1124,6 +1124,18 @@
   .own-comment-item{ padding-bottom:14px; border-bottom:1px solid var(--line); }
   .own-comment-head{ display:flex; align-items:baseline; gap:10px; margin-bottom:4px; }
   .own-comment-name{ font-family:var(--f-mincho); font-size:calc(13px * var(--font-scale, 1)); color:var(--sumi); }
+
+  /* 称号バッジ(投稿・コメントの、名前の横に出す)。 */
+  .poster-title-badge{
+    font-size:calc(10px * var(--font-scale, 1)); color:var(--bengara); letter-spacing:.03em;
+    margin-left:4px;
+  }
+  .poster-title-badge.unique{
+    position:relative; display:inline-block; padding:1px 5px; border-radius:3px;
+    animation:title-glow 2.4s ease-in-out infinite;
+  }
+  .poster-title-badge.top-rank{ color:#C9971F; }
+  .poster-title-badge.top-rank.unique{ animation-name:title-glow-gold; }
   .own-comment-date{ font-size:calc(11px * var(--font-scale, 1)); color:var(--usuzumi); }
   .own-comment-text{ font-size:calc(13px * var(--font-scale, 1)); color:var(--sumi); white-space:pre-wrap; word-break:break-word; margin:0; }
   .own-comment-delete{
@@ -2809,7 +2821,7 @@
           el.className = 'own-comment-item';
           el.innerHTML = `
             <div class="own-comment-head">
-              <span class="own-comment-name">${escapeHtml(data.authorName || '名無しさん')}</span>
+              <span class="own-comment-name">${escapeHtml(data.authorName || '名無しさん')}</span>${window.titleBadgeHtml ? window.titleBadgeHtml(data.titleId) : ''}
               <span class="own-comment-date">${escapeHtml(formatDate(createdAt))}</span>
             </div>
             <p class="own-comment-text">${escapeHtml(data.text || '')}</p>
@@ -2862,11 +2874,14 @@
       submitBtn.disabled = true;
       try{
         const nickname = (typeof currentNickname !== 'undefined' && currentNickname) ? currentNickname : (fb.auth.currentUser.displayName || '名無しさん');
+        // 投稿する瞬間に選んでいた称号を、そのままスナップショットとして残す(名前と同じ考え方)。
+        const currentTitleId = (typeof AchievementModule !== 'undefined') ? AchievementModule.getTitle() : null;
         await fb.addDoc(fb.collection(fb.db, 'comments'), {
           itemKey: currentItemKey,
           text: text,
           authorUid: fb.auth.currentUser.uid,
           authorName: String(nickname).slice(0, 20),
+          ...(currentTitleId ? { titleId: currentTitleId } : {}),
           createdAt: fb.serverTimestamp()
         });
         textEl.value = '';
@@ -2913,6 +2928,10 @@
     // Firebase Console の Authentication タブ、または Firestore の「users」コレクションの
     // ドキュメントID(あなたのuid)を確認して、下の文字列を差し替えてください。
     const OWNER_UID = 'PqDLrQepODhEZ6SVWt5wl2rubq32';
+    // 運営者専用の称号。実績の一覧には出さず(誰でも取れるものではないため)、
+    // 運営者本人がログインした時に、自動で名乗る。
+    const OWNER_TITLE_ID = 'admin-title';
+    const OWNER_TITLE_NAME = '管理人';
     const AchievementModule = (function(){
       let uid = null;
       let unlocked = new Set();
@@ -2932,6 +2951,7 @@
         isLoggedIn(){ return !!uid; },
         has(id){ return unlocked.has(id); },
         getTitle(){ return titleId; },
+        getOwnerTitle(){ return (uid === OWNER_UID) ? { id:OWNER_TITLE_ID, name:OWNER_TITLE_NAME } : null; },
 
         async setUser(newUid){
           uid = newUid;
@@ -2946,6 +2966,11 @@
                   const data = snap.data();
                   if(Array.isArray(data.achievements)) unlocked = new Set(data.achievements);
                   if(data.titleAchievement) titleId = data.titleAchievement;
+                  // 運営者本人には、ログインするたびに、自動で「管理人」の称号を名乗らせる。
+                  if(uid === OWNER_UID){
+                    unlocked.add(OWNER_TITLE_ID);
+                    if(!titleId) titleId = OWNER_TITLE_ID;
+                  }
                 }
               }catch(err){ console.error('failed to load achievements:', err); }
             }
@@ -2998,6 +3023,28 @@
       };
     })();
     window.AchievementModule = AchievementModule;
+
+  // 投稿・コメント時の称号を、バッジのHTMLに変換する。
+  // (「titleId が、たまたま今のログイン中の人と同じか」ではなく、
+  //  titleId 自体が、運営者専用の称号IDと一致するかどうかで、判定する。
+  //  そうしないと、他の人の投稿を見ている時に、正しく表示できないため。)
+  window.titleBadgeHtml = function(titleId){
+    if(!titleId) return '';
+    let name, isUnique = false, isTopRank = false;
+    if(titleId === OWNER_TITLE_ID){
+      name = OWNER_TITLE_NAME;
+    }else{
+      const def = (window.ACHIEVEMENTS || []).find(a => a.id === titleId);
+      if(!def) return '';
+      name = def.name;
+      isUnique = def.type === 'unique';
+      isTopRank = !!def.topRank;
+    }
+    const cls = ['poster-title-badge'];
+    if(isUnique) cls.push('unique');
+    if(isTopRank) cls.push('top-rank');
+    return `<span class="${cls.join(' ')}">【${escapeHtml(name)}】</span>`;
+  };
 
     function youtubeEmbedUrl(url){
       let id = null;
