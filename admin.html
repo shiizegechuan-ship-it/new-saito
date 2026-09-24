@@ -233,26 +233,6 @@
   .bottom-sheet-sub{ font-size:calc(12px * var(--font-scale, 1)); color:var(--usuzumi); font-weight:400; }
   
   .bottom-sheet-close svg{ width:14px; height:14px; stroke:var(--sumi); }
-  
-  .rewatch-list{
-    display:flex; gap:16px; overflow-x:auto; padding:20px 24px 28px;
-  }
-  
-  .rewatch-item{
-    flex:none; width:130px; cursor:pointer;
-  }
-  
-  .rewatch-thumb{
-    width:130px; height:130px; border-radius:6px; position:relative; overflow:hidden;
-  }
-  
-  .rewatch-item p{
-    margin-top:8px; font-size:calc(12px * var(--font-scale, 1)); color:var(--sumi);
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  }
-  
-  .rewatch-empty{ padding:20px 24px 32px; font-size:calc(13px * var(--font-scale, 1)); color:var(--usuzumi); }
-  
 
   .qr-modal{
     position:fixed; top:50%; left:50%; transform:translate(-50%,-50%) scale(.9);
@@ -962,6 +942,10 @@
   // 投稿者名などの「自由入力された文字列」を画面に表示する前に、必ずこの関数を通す。
   // これを通さずに直接HTMLに埋め込むと、悪意のある入力によって任意のコードが実行されてしまう
   // (XSS脆弱性)ため、ユーザーが入力した文字列を表示する場所では、必ず使用すること。
+  window.stripInvisibleChars = function(text){
+    if(typeof text !== 'string') return text;
+    return text.replace(/[\u200B-\u200D\uFEFF\u202A-\u202E\u2066-\u2069\u0000-\u001F\u007F]/g, '');
+  };
   window.escapeHtml = function(str){
     // 属性値(例:src="...")の中で使っても安全なように、
     // < > & に加えて、二重引用符・単引用符もすべて実体参照に置き換える。
@@ -1020,7 +1004,6 @@
         <li><a href="index.html#contact">Contact</a></li>
         <li><a href="fanart.html">Platform</a></li>
         <li><a href="faq.html">FAQ</a></li>
-        <li><a href="#" id="navRewatch">Rewatch</a></li>
         <li><a href="#" id="navQr">QR Code</a></li>
       </ul>
     </nav>
@@ -1092,19 +1075,6 @@
 
 <div class="bg-gradient" aria-hidden="true"></div>
 <canvas id="fireworksCanvas" aria-hidden="true"></canvas>
-
-<div class="bottom-sheet-backdrop" id="rewatchBackdrop" hidden></div>
-<div class="bottom-sheet" id="rewatchSheet" hidden aria-label="閲覧履歴">
-  <div class="bottom-sheet-handle"></div>
-  <div class="bottom-sheet-head">
-    <h3>Rewatch <span class="bottom-sheet-sub">— 最近見た作品</span></h3>
-    <button type="button" class="bottom-sheet-close" id="rewatchClose" aria-label="閉じる">
-      <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l16 16M20 4L4 20"/></svg>
-    </button>
-  </div>
-  <div class="rewatch-list" id="rewatchList"></div>
-  <p class="rewatch-empty" id="rewatchEmpty" hidden>まだ閲覧した作品がありません。</p>
-</div>
 
 <div class="qr-modal-backdrop" id="qrBackdrop" hidden></div>
 <div class="qr-modal" id="qrModal" hidden aria-label="QRコード">
@@ -1301,9 +1271,9 @@
         <form class="admin-works-form" id="adminWorksForm">
           <p class="admin-works-form-title">新しい作品を追加</p>
           <div class="admin-works-form-grid">
-            <label>タイトル(日本語)<input type="text" id="workTitleJa" required></label>
+            <label>タイトル(日本語)<input type="text" id="workTitleJa" maxlength="100" required></label>
             <label>
-              タイトル(英語)<input type="text" id="workTitleEn" required>
+              タイトル(英語)<input type="text" id="workTitleEn" maxlength="100" required>
               <div class="admin-translate-row">
                 <button type="button" class="admin-translate-btn" data-translate-from="workTitleJa" data-translate-to="workTitleEn">英語に自動翻訳</button>
                 <span class="admin-translate-note" data-translate-status-for="workTitleEn"></span>
@@ -1324,9 +1294,9 @@
             <label>画像URL(任意・空欄なら色見本)<input type="url" id="workImg" placeholder="https://..."></label>
             <label>背景色(画像を使わない場合)<input type="text" id="workColor" placeholder="linear-gradient(150deg,#2B4A5C,#1D3644)" value="linear-gradient(150deg,#2B4A5C,#1D3644)"></label>
           </div>
-          <label class="admin-works-form-full">説明文(日本語)<textarea id="workDescJa" rows="2" required></textarea></label>
+          <label class="admin-works-form-full">説明文(日本語)<textarea id="workDescJa" rows="2" maxlength="500" required></textarea></label>
           <label class="admin-works-form-full">
-            説明文(英語)<textarea id="workDescEn" rows="2" required></textarea>
+            説明文(英語)<textarea id="workDescEn" rows="2" maxlength="500" required></textarea>
             <div class="admin-translate-row">
               <button type="button" class="admin-translate-btn" data-translate-from="workDescJa" data-translate-to="workDescEn">英語に自動翻訳</button>
               <span class="admin-translate-note" data-translate-status-for="workDescEn"></span>
@@ -1360,12 +1330,12 @@
         <form class="admin-works-form" id="adminMusicForm">
           <p class="admin-works-form-title">新しい曲を追加</p>
           <div class="admin-works-form-grid">
-            <label>タイトル<input type="text" id="musicTitle" required></label>
+            <label>タイトル<input type="text" id="musicTitle" maxlength="100" required></label>
             <label>年<input type="text" id="musicYear" placeholder="2026" required></label>
             <label>音声ファイルのURL<input type="url" id="musicAudio" placeholder="https://..." required></label>
             <label>背景色(ジャケット風の色)<input type="text" id="musicColor" placeholder="linear-gradient(150deg,#A34430,#7A311F)" value="linear-gradient(150deg,#A34430,#7A311F)"></label>
           </div>
-          <label class="admin-works-form-full">説明文<textarea id="musicDesc" rows="2" required></textarea></label>
+          <label class="admin-works-form-full">説明文<textarea id="musicDesc" rows="2" maxlength="500" required></textarea></label>
           <button type="submit" class="btn-line press-fill"><span>追加する</span></button>
           <p class="admin-works-form-note" id="adminMusicFormNote" hidden></p>
         </form>
@@ -1378,13 +1348,13 @@
         <form class="admin-works-form" id="adminNovelsForm">
           <p class="admin-works-form-title">新しい小説を追加</p>
           <div class="admin-works-form-grid">
-            <label>タイトル<input type="text" id="novelTitle" required></label>
+            <label>タイトル<input type="text" id="novelTitle" maxlength="100" required></label>
             <label>年<input type="text" id="novelYear" placeholder="2026" required></label>
             <label>背景色(表紙風の色)<input type="text" id="novelColor" placeholder="linear-gradient(150deg,#A34430,#7A311F)" value="linear-gradient(150deg,#A34430,#7A311F)"></label>
           </div>
-          <label class="admin-works-form-full">一覧に出る紹介文(抜粋)<textarea id="novelExcerpt" rows="2" required></textarea></label>
-          <label class="admin-works-form-full">短い説明文<textarea id="novelDesc" rows="2" required></textarea></label>
-          <label class="admin-works-form-full">本文<textarea id="novelBody" rows="6" required></textarea></label>
+          <label class="admin-works-form-full">一覧に出る紹介文(抜粋)<textarea id="novelExcerpt" rows="2" maxlength="300" required></textarea></label>
+          <label class="admin-works-form-full">短い説明文<textarea id="novelDesc" rows="2" maxlength="500" required></textarea></label>
+          <label class="admin-works-form-full">本文<textarea id="novelBody" rows="6" maxlength="20000" required></textarea></label>
           <button type="submit" class="btn-line press-fill"><span>追加する</span></button>
           <p class="admin-works-form-note" id="adminNovelsFormNote" hidden></p>
         </form>
@@ -1397,12 +1367,12 @@
         <form class="admin-works-form" id="adminMoviesForm">
           <p class="admin-works-form-title">新しい映像を追加</p>
           <div class="admin-works-form-grid">
-            <label>タイトル<input type="text" id="movieTitle" required></label>
+            <label>タイトル<input type="text" id="movieTitle" maxlength="100" required></label>
             <label>年<input type="text" id="movieYear" placeholder="2026" required></label>
             <label>動画のURL(YouTubeまたは動画ファイル)<input type="url" id="movieUrl" placeholder="https://..." required></label>
             <label>背景色(URLが表示できない時用)<input type="text" id="movieColor" placeholder="linear-gradient(150deg,#2B4A5C,#1D3644)" value="linear-gradient(150deg,#2B4A5C,#1D3644)"></label>
           </div>
-          <label class="admin-works-form-full">説明文<textarea id="movieDesc" rows="2" required></textarea></label>
+          <label class="admin-works-form-full">説明文<textarea id="movieDesc" rows="2" maxlength="500" required></textarea></label>
           <button type="submit" class="btn-line press-fill"><span>追加する</span></button>
           <p class="admin-works-form-note" id="adminMoviesFormNote" hidden></p>
         </form>
@@ -2032,96 +2002,6 @@
   }catch(err){ console.error('settings panel init failed:', err); }
 
   try{
-    const REWATCH_WORKS = [
-      { id:"distant-room",   title:"遠い部屋",   titleEn:"A Distant Room",     color:"linear-gradient(150deg,#2B4A5C,#1D3644)" },
-      { id:"lighting-a-lamp", title:"灯りをともす", titleEn:"Lighting a Lamp",   color:"linear-gradient(150deg,#A34430,#7A311F)" },
-      { id:"after-the-rain", title:"雨のあと",   titleEn:"After the Rain",     color:"linear-gradient(150deg,#726B5E,#4A453B)" },
-      { id:"a-letter",       title:"手紙",       titleEn:"A Letter",           color:"linear-gradient(150deg,#AD8A54,#8A6B3C)" },
-      { id:"shape-of-night", title:"夜のかたち", titleEn:"The Shape of Night", color:"linear-gradient(150deg,#1D3644,#221F1B)" },
-      { id:"garden-records", title:"庭の記録",   titleEn:"Garden Records",     color:"linear-gradient(150deg,#7A311F,#221F1B)" }
-    ];
-    const REWATCH_KEY = 'portfolio-rewatch-history';
-    function getRewatchHistory(){
-      try{ return JSON.parse(localStorage.getItem(REWATCH_KEY) || '[]'); }catch(e){ return []; }
-    }
-    const rewatchBackdrop = document.getElementById('rewatchBackdrop');
-    const rewatchSheet = document.getElementById('rewatchSheet');
-    const rewatchList = document.getElementById('rewatchList');
-    const rewatchEmpty = document.getElementById('rewatchEmpty');
-    const navRewatch = document.getElementById('navRewatch');
-
-    function renderRewatchList(){
-      const history = getRewatchHistory();
-      rewatchList.innerHTML = '';
-      const validWorks = history.map(id => REWATCH_WORKS.find(w => w.id === id)).filter(Boolean);
-      rewatchEmpty.hidden = validWorks.length > 0;
-      validWorks.forEach(w=>{
-        const title = isEnglish() ? w.titleEn : w.title;
-        const item = document.createElement('div');
-        item.className = 'rewatch-item';
-        item.innerHTML = `<div class="rewatch-thumb"><div style="position:absolute;inset:0;background:${w.color}"></div></div><p>${title}</p>`;
-        item.addEventListener('click', ()=>{
-          window.location.href = 'index.html#works';
-        });
-        rewatchList.appendChild(item);
-      });
-    }
-    const rewatchCtl = bindSheetModal(rewatchBackdrop, rewatchSheet, 400, renderRewatchList);
-    navRewatch.addEventListener('click', (e)=>{ e.preventDefault(); rewatchCtl.open(); });
-    document.getElementById('rewatchClose').addEventListener('click', rewatchCtl.close);
-
-    // ハンドル部分(上部のつまみ)を指・マウスでドラッグして、シートの高さを
-    // 上下に自由に調整できるようにする。上に引っ張れば大きく、下に引っ張れば
-    // 小さくなり、さらに大きく下へ引っ張ると、そのまま閉じる。
-    (function(){
-      const handle = rewatchSheet.querySelector('.bottom-sheet-handle');
-      if(!handle) return;
-      const MIN_HEIGHT_VH = 40;
-      const MAX_HEIGHT_VH = 92;
-      const DEFAULT_HEIGHT_VH = 70;
-      const CLOSE_THRESHOLD_VH = 22; // これ以上下に引っ張ったら閉じる
-      let startY = 0;
-      let currentY = 0;
-      let baseHeightVh = DEFAULT_HEIGHT_VH;
-      let dragging = false;
-      function currentHeightVh(){
-        const rect = rewatchSheet.getBoundingClientRect();
-        return (rect.height / window.innerHeight) * 100;
-      }
-      function onStart(clientY){
-        dragging = true;
-        startY = clientY;
-        currentY = clientY;
-        baseHeightVh = currentHeightVh();
-        rewatchSheet.style.transition = 'none';
-      }
-      function onMove(clientY){
-        if(!dragging) return;
-        currentY = clientY;
-        const deltaVh = ((startY - currentY) / window.innerHeight) * 100; // 上へ引っ張ると正の値
-        const newHeightVh = Math.max(MIN_HEIGHT_VH, Math.min(MAX_HEIGHT_VH, baseHeightVh + deltaVh));
-        rewatchSheet.style.maxHeight = newHeightVh + 'vh';
-        rewatchSheet.style.height = newHeightVh + 'vh';
-      }
-      function onEnd(){
-        if(!dragging) return;
-        dragging = false;
-        rewatchSheet.style.transition = '';
-        const deltaVh = ((startY - currentY) / window.innerHeight) * 100;
-        if(deltaVh < -CLOSE_THRESHOLD_VH){
-          rewatchCtl.close();
-        }
-      }
-      handle.addEventListener('touchstart', (e)=> onStart(e.touches[0].clientY), { passive:true });
-      handle.addEventListener('touchmove', (e)=> onMove(e.touches[0].clientY), { passive:true });
-      handle.addEventListener('touchend', onEnd);
-      handle.addEventListener('mousedown', (e)=>{ onStart(e.clientY); e.preventDefault(); });
-      document.addEventListener('mousemove', (e)=>{ if(dragging) onMove(e.clientY); });
-      document.addEventListener('mouseup', onEnd);
-    })();
-  }catch(err){ console.error('rewatch init failed:', err); }
-
-  try{
     const qrBackdrop = document.getElementById('qrBackdrop');
     const qrModal = document.getElementById('qrModal');
     const navQr = document.getElementById('navQr');
@@ -2596,7 +2476,7 @@
           row.className = 'admin-banned-item';
           row.innerHTML = `
             <div>
-              <p class="admin-banned-uid">${d.id}</p>
+              <p class="admin-banned-uid">${escapeHtml(d.id)}</p>
               <p class="admin-banned-date">${formatDate(item.bannedAt)}</p>
             </div>
             <button type="button">BAN解除</button>`;
@@ -2663,10 +2543,10 @@
           const card = document.createElement('div');
           card.className = 'admin-work-card';
           card.innerHTML = `
-            <div class="admin-work-thumb">${w.img ? `<img src="${w.img}" alt="" loading="lazy" decoding="async">` : ''}</div>
+            <div class="admin-work-thumb">${w.img ? `<img src="${escapeHtml(w.img)}" alt="" loading="lazy" decoding="async">` : ''}</div>
             <div class="admin-work-info">
               <p class="admin-work-name">${escapeHtml(w.title)}</p>
-              <p class="admin-work-meta${w.isFirestore ? '' : ' hardcoded'}">${w.sub} / ${w.year}${w.isFirestore ? '' : '(既存作品)'}${(()=>{
+              <p class="admin-work-meta${w.isFirestore ? '' : ' hardcoded'}">${escapeHtml(w.sub)} / ${escapeHtml(w.year)}${w.isFirestore ? '' : '(既存作品)'}${(()=>{
                 if(!w.publishedAt) return '';
                 const p = w.publishedAt.toDate ? w.publishedAt.toDate() : new Date(w.publishedAt);
                 return p.getTime() > Date.now() ? ` ・予約投稿(${escapeHtml(p.toLocaleString('ja-JP'))} に公開)` : '';
@@ -2825,21 +2705,29 @@
       const publishAtInput = document.getElementById('workPublishAt').value;
       const publishedAt = publishAtInput ? new Date(publishAtInput) : new Date();
       const isScheduled = publishedAt.getTime() > Date.now();
+      const strip = (v)=> window.stripInvisibleChars ? window.stripInvisibleChars(v) : v;
       const data = {
-        title: document.getElementById('workTitleJa').value.trim(),
-        titleEn: document.getElementById('workTitleEn').value.trim(),
+        title: strip(document.getElementById('workTitleJa').value.trim()),
+        titleEn: strip(document.getElementById('workTitleEn').value.trim()),
         sub: document.getElementById('workSub').value.trim(),
         year: String(publishedAt.getFullYear()), // 並び替え・表示は、これまで通り「年」を使う
         publishedAt: publishedAt,
         img: imgUrl,
         color: document.getElementById('workColor').value.trim(),
-        desc: document.getElementById('workDescJa').value.trim(),
-        descEn: document.getElementById('workDescEn').value.trim(),
+        desc: strip(document.getElementById('workDescJa').value.trim()),
+        descEn: strip(document.getElementById('workDescEn').value.trim()),
         pickupFocusX: parseInt(workPickupFocusXInput.value, 10) || 50,
         pickupFocusY: parseInt(workPickupFocusYInput.value, 10) || 50,
         pickupExcluded: document.getElementById('workPickupExcluded').checked,
         createdAt: new Date()
       };
+      if(typeof window.containsCodeLikeContent === 'function'){
+        const hasCodeLike = Object.values(data).some(v => typeof v === 'string' && window.containsCodeLikeContent(v));
+        if(hasCodeLike){
+          alert('コードのような文字列が含まれているため、追加できません。内容をご確認ください。');
+          return;
+        }
+      }
       try{
         await fb.addDoc(fb.collection(fb.db, 'works'), data);
         worksFormNote.textContent = isScheduled
@@ -2933,6 +2821,12 @@
         const fb = window.__adminFirebase;
         if(!fb || !fb.ready){ alert('現在追加できません。時間をおいて再度お試しください。'); return; }
         const data = buildData();
+        // 見えない・制御用の文字(ゼロ幅スペースなど)を、あらかじめ取り除いておく。
+        if(typeof window.stripInvisibleChars === 'function'){
+          Object.keys(data).forEach(k=>{
+            if(typeof data[k] === 'string') data[k] = window.stripInvisibleChars(data[k]);
+          });
+        }
         // 「いかにもコードのような文字列」が、どれかの項目に含まれていないか確認する
         // (普段はご本人の入力なので問題ないが、アカウントの乗っ取りや、他所からの
         //  コピペ経由で、意図せず紛れ込むことへの備えとして、念のため確認している)。
@@ -3110,7 +3004,7 @@
         const fb = window.__adminFirebase;
         if(!fb || !fb.ready){ alert('現在保存できません。時間をおいて再度お試しください。'); return; }
         const accepting = acceptingRadio.checked;
-        const text = textArea.value;
+        const text = window.stripInvisibleChars ? window.stripInvisibleChars(textArea.value) : textArea.value;
         if(typeof window.containsCodeLikeContent === 'function' && window.containsCodeLikeContent(text)){
           noteEl.textContent = 'コードのような文字列が含まれているため、保存できません。内容をご確認ください。';
           noteEl.hidden = false;
@@ -3199,8 +3093,9 @@
         const fb = window.__adminFirebase;
         noteEl.hidden = true;
         if(!fb || !fb.ready) return;
-        const question = qInput.value.trim();
-        const answer = aInput.value.trim();
+        const strip = (v)=> window.stripInvisibleChars ? window.stripInvisibleChars(v) : v;
+        const question = strip(qInput.value.trim());
+        const answer = strip(aInput.value.trim());
         if(!question || !answer){
           noteEl.textContent = '見出しと、本文の両方を入力してください。';
           noteEl.hidden = false;

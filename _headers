@@ -17,3 +17,8 @@
   # 他のサイトへのリンクをクリックした時に、移動元のURL情報を、
   # 必要以上に相手サイトへ渡さないようにする。
   Referrer-Policy: strict-origin-when-cross-origin
+
+  # カメラ・マイク・位置情報など、このサイトが使っていないブラウザの機能を、
+  # まとめて使えなくする。万が一、悪意のあるコードが紛れ込んだ場合の、被害を抑える、
+  # もう一段の備え。「コピー」機能(お問い合わせ内容のコピー等)だけは、使っているので許可する。
+  Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=(), usb=(), midi=(), magnetometer=(), gyroscope=(), accelerometer=(), clipboard-write=(self)

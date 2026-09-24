@@ -1495,7 +1495,7 @@
           <div class="own-comments-list" id="ownCommentsList" hidden></div>
           <p class="own-comments-empty i18n" data-en="No comments yet." id="ownCommentsEmpty" hidden>まだ、コメントはありません。</p>
           <div class="own-comment-form" id="ownCommentForm" hidden>
-            <textarea id="ownCommentText" maxlength="300" placeholder="感想を書く…"></textarea>
+            <textarea id="ownCommentText" maxlength="30" placeholder="感想を書く…"></textarea>
             <div class="own-comment-form-row">
               <button type="button" class="own-comment-submit" id="ownCommentSubmitBtn">
                 <span class="i18n" data-en="Post">コメントする</span>
@@ -1998,6 +1998,8 @@
       langToggle.textContent = lang === 'en' ? '日本語' : 'English';
       langToggle.setAttribute('aria-label', lang === 'en' ? 'Switch to Japanese' : 'Switch to English');
       langToggle.dataset.lang = lang;
+
+      if(typeof window.refreshOwnCommentsLanguage === 'function') window.refreshOwnCommentsLanguage();
     }
 
     langToggle.addEventListener('click', ()=>{
@@ -2767,7 +2769,7 @@
     let currentItemKey = null;
 
     function formatDate(ms){
-      try{ return new Date(ms).toLocaleString('ja-JP', { year:'numeric', month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }); }
+      try{ return new Date(ms).toLocaleString(isEnglish() ? 'en-US' : 'ja-JP', { year:'numeric', month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }); }
       catch(e){ return ''; }
     }
 
@@ -2801,7 +2803,7 @@
               <span class="own-comment-date">${escapeHtml(formatDate(createdAt))}</span>
             </div>
             <p class="own-comment-text">${escapeHtml(data.text || '')}</p>
-            ${canDelete ? '<button type="button" class="own-comment-delete">削除</button>' : ''}`;
+            ${canDelete ? `<button type="button" class="own-comment-delete">${isEnglish() ? 'Delete' : '削除'}</button>` : ''}`;
           if(canDelete){
             el.querySelector('.own-comment-delete').addEventListener('click', async ()=>{
               if(!window.confirm('このコメントを削除しますか?')) return;
@@ -2833,18 +2835,18 @@
       noteEl.textContent = '';
       if(!fb || !fb.ready || !fb.auth.currentUser || !currentItemKey) return;
       const text = (typeof window.stripInvisibleChars === 'function' ? window.stripInvisibleChars(textEl.value.trim()) : textEl.value.trim());
-      if(!text){ noteEl.textContent = 'コメントを入力してください。'; return; }
-      if(text.length > 300){ noteEl.textContent = 'コメントは、300字以内にしてください。'; return; }
+      if(!text){ noteEl.textContent = isEnglish() ? 'Please enter a comment.' : 'コメントを入力してください。'; return; }
+      if(text.length > 30){ noteEl.textContent = isEnglish() ? 'Comments must be 30 characters or fewer.' : 'コメントは、30字以内にしてください。'; return; }
       if(typeof window.containsCodeLikeContent === 'function' && window.containsCodeLikeContent(text)){
-        noteEl.textContent = 'コードのような文字列は入力できません。';
+        noteEl.textContent = isEnglish() ? "Text that looks like code can't be used." : 'コードのような文字列は入力できません。';
         return;
       }
       if(typeof window.isCurrentUserBanned === 'function' && await window.isCurrentUserBanned()){
-        noteEl.textContent = 'このアカウントは、一部の操作を停止されています。';
+        noteEl.textContent = isEnglish() ? 'This account has been restricted from some actions.' : 'このアカウントは、一部の操作を停止されています。';
         return;
       }
       if(typeof window.checkSiteWriteRateLimit === 'function' && !(await window.checkSiteWriteRateLimit('writeRateLimit'))){
-        noteEl.textContent = 'サイトが混み合っております。しばらくお待ちください。';
+        noteEl.textContent = isEnglish() ? 'The site is busy right now. Please try again shortly.' : 'サイトが混み合っております。しばらくお待ちください。';
         return;
       }
       submitBtn.disabled = true;
@@ -2861,13 +2863,17 @@
         renderComments(currentItemKey);
       }catch(err){
         console.error('comment post failed:', err);
-        noteEl.textContent = '投稿に失敗しました。時間をおいて、もう一度お試しください。';
+        noteEl.textContent = isEnglish() ? 'Failed to post. Please try again later.' : '投稿に失敗しました。時間をおいて、もう一度お試しください。';
       }finally{
         submitBtn.disabled = false;
       }
     });
 
     window.renderOwnComments = renderComments;
+    // 言語の切り替え時に、今、開いているコメント一覧があれば、日付・ボタンのラベルを描き直すため。
+    window.refreshOwnCommentsLanguage = function(){
+      if(currentItemKey) renderComments(currentItemKey);
+    };
   })();
 
 
@@ -3136,7 +3142,11 @@
           }
         });
         return !isBusy;
-      }catch(err){ console.error('rate limit check failed:', err); return true; }
+      }catch(err){
+        console.error('rate limit check failed:', err);
+        if(err && err.code === 'permission-denied') return false;
+        return true;
+      }
     }
     // ニックネーム変更など、別の場所からも使えるように公開しておく(fanart.htmlと同じ形)。
     window.isCurrentUserBanned = isCurrentUserBanned;
@@ -3218,11 +3228,11 @@
         const thumb = video.url ? youtubeThumbUrl(video.url) : null;
         const thumbInner = thumb
           ? `<img src="${escapeHtml(thumb)}" alt="${escapeHtml(video.title)}" loading="lazy">`
-          : `<div style="position:absolute;inset:0;background:${video.color};"></div>`;
+          : `<div style="position:absolute;inset:0;background:${escapeHtml(video.color)};"></div>`;
         card.innerHTML = `
           <div class="movie-thumb">${thumbInner}<span class="movie-play-badge">▶</span></div>
           <p class="movie-card-title">${escapeHtml(video.title)}</p>
-          <p class="movie-card-meta">Movie / ${video.year} <span class="movie-mini-like"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6.7-4.35-9.3-8.1C1 10.2 1.8 6.9 4.6 5.4c2.2-1.2 4.7-.5 6 1.3l1.4 1.9 1.4-1.9c1.3-1.8 3.8-2.5 6-1.3 2.8 1.5 3.6 4.8 1.9 7.5C18.7 16.65 12 21 12 21z"/></svg><span>${normalizeLikes(video.likes)}</span></span></p>`;
+          <p class="movie-card-meta">Movie / ${escapeHtml(video.year)} <span class="movie-mini-like"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-6.7-4.35-9.3-8.1C1 10.2 1.8 6.9 4.6 5.4c2.2-1.2 4.7-.5 6 1.3l1.4 1.9 1.4-1.9c1.3-1.8 3.8-2.5 6-1.3 2.8 1.5 3.6 4.8 1.9 7.5C18.7 16.65 12 21 12 21z"/></svg><span>${normalizeLikes(video.likes)}</span></span></p>`;
         card.addEventListener('click', ()=> openLightbox(video));
         listEl.appendChild(card);
       });

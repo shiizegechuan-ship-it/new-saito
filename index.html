@@ -2050,6 +2050,11 @@
     if(loaderEl) loaderEl.classList.add('hidden');
     document.body.classList.remove('loading');
     try{ sessionStorage.setItem('loader-shown', 'true'); }catch(e){}
+    // ローダーが終わった合図。訪問者が、すぐには使わない機能(検索・QRコード・BGM切り替え・
+    // お問い合わせフォームなど)の準備を、この合図をきっかけに始めることで、ローダーの
+    // アニメーションが動いている間に、重い処理が重ならないようにする。
+    window.__loaderFinished = true;
+    window.dispatchEvent(new CustomEvent('site-loader-finished'));
   }
   window.addEventListener('error', finishLoader);
   window.addEventListener('unhandledrejection', finishLoader);
@@ -2475,7 +2480,7 @@
           <div class="own-comments-list" id="ownCommentsList" hidden></div>
           <p class="own-comments-empty i18n" data-en="No comments yet." id="ownCommentsEmpty" hidden>まだ、コメントはありません。</p>
           <div class="own-comment-form" id="ownCommentForm" hidden>
-            <textarea id="ownCommentText" maxlength="300" placeholder="感想を書く…"></textarea>
+            <textarea id="ownCommentText" maxlength="30" placeholder="感想を書く…"></textarea>
             <div class="own-comment-form-row">
               <button type="button" class="own-comment-submit" id="ownCommentSubmitBtn">
                 <span class="i18n" data-en="Post">コメントする</span>
@@ -2573,6 +2578,12 @@
 </div>
 
 <script>
+  // ローダーが終わるまで、訪問者が、すぐには使わない機能の準備を待たせるための、共通の仕組み。
+  // (ローダーが、既に終わっている場合は、待たずに、その場で実行する。)
+  function deferUntilLoaderFinished(fn){
+    if(window.__loaderFinished){ fn(); }
+    else{ window.addEventListener('site-loader-finished', fn, { once:true }); }
+  }
   let applyTheme = function(){};
   function isDarkTheme(){ return document.documentElement.getAttribute('data-site-theme') === 'dark'; }
 
@@ -2763,7 +2774,7 @@
     let currentItemKey = null;
 
     function formatDate(ms){
-      try{ return new Date(ms).toLocaleString('ja-JP', { year:'numeric', month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }); }
+      try{ return new Date(ms).toLocaleString(isEnglish() ? 'en-US' : 'ja-JP', { year:'numeric', month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit' }); }
       catch(e){ return ''; }
     }
 
@@ -2797,7 +2808,7 @@
               <span class="own-comment-date">${escapeHtml(formatDate(createdAt))}</span>
             </div>
             <p class="own-comment-text">${escapeHtml(data.text || '')}</p>
-            ${canDelete ? '<button type="button" class="own-comment-delete">削除</button>' : ''}`;
+            ${canDelete ? `<button type="button" class="own-comment-delete">${isEnglish() ? 'Delete' : '削除'}</button>` : ''}`;
           if(canDelete){
             el.querySelector('.own-comment-delete').addEventListener('click', async ()=>{
               if(!window.confirm('このコメントを削除しますか?')) return;
@@ -2829,18 +2840,18 @@
       noteEl.textContent = '';
       if(!fb || !fb.ready || !fb.auth.currentUser || !currentItemKey) return;
       const text = (typeof window.stripInvisibleChars === 'function' ? window.stripInvisibleChars(textEl.value.trim()) : textEl.value.trim());
-      if(!text){ noteEl.textContent = 'コメントを入力してください。'; return; }
-      if(text.length > 300){ noteEl.textContent = 'コメントは、300字以内にしてください。'; return; }
+      if(!text){ noteEl.textContent = isEnglish() ? 'Please enter a comment.' : 'コメントを入力してください。'; return; }
+      if(text.length > 30){ noteEl.textContent = isEnglish() ? 'Comments must be 30 characters or fewer.' : 'コメントは、30字以内にしてください。'; return; }
       if(typeof window.containsCodeLikeContent === 'function' && window.containsCodeLikeContent(text)){
-        noteEl.textContent = 'コードのような文字列は入力できません。';
+        noteEl.textContent = isEnglish() ? "Text that looks like code can't be used." : 'コードのような文字列は入力できません。';
         return;
       }
       if(typeof window.isCurrentUserBanned === 'function' && await window.isCurrentUserBanned()){
-        noteEl.textContent = 'このアカウントは、一部の操作を停止されています。';
+        noteEl.textContent = isEnglish() ? 'This account has been restricted from some actions.' : 'このアカウントは、一部の操作を停止されています。';
         return;
       }
       if(typeof window.checkSiteWriteRateLimit === 'function' && !(await window.checkSiteWriteRateLimit('writeRateLimit'))){
-        noteEl.textContent = 'サイトが混み合っております。しばらくお待ちください。';
+        noteEl.textContent = isEnglish() ? 'The site is busy right now. Please try again shortly.' : 'サイトが混み合っております。しばらくお待ちください。';
         return;
       }
       submitBtn.disabled = true;
@@ -2857,13 +2868,17 @@
         renderComments(currentItemKey);
       }catch(err){
         console.error('comment post failed:', err);
-        noteEl.textContent = '投稿に失敗しました。時間をおいて、もう一度お試しください。';
+        noteEl.textContent = isEnglish() ? 'Failed to post. Please try again later.' : '投稿に失敗しました。時間をおいて、もう一度お試しください。';
       }finally{
         submitBtn.disabled = false;
       }
     });
 
     window.renderOwnComments = renderComments;
+    // 言語の切り替え時に、今、開いているコメント一覧があれば、日付・ボタンのラベルを描き直すため。
+    window.refreshOwnCommentsLanguage = function(){
+      if(currentItemKey) renderComments(currentItemKey);
+    };
   })();
 
 
@@ -3105,8 +3120,8 @@
     card.dataset.sub = w.sub;
     card.dataset.title = t0.title;
     const media = w.img
-      ? `<img class="swatch-img blur-load" src="${w.img}" alt="${t0.title}" loading="lazy" decoding="async" onload="this.classList.add('loaded')">`
-      : `<div class="swatch" style="position:absolute;inset:0;background:${w.color}"></div><div class="shippou-bg"></div>`;
+      ? `<img class="swatch-img blur-load" src="${escapeHtml(w.img)}" alt="${escapeHtml(t0.title)}" loading="lazy" decoding="async" onload="this.classList.add('loaded')">`
+      : `<div class="swatch" style="position:absolute;inset:0;background:${escapeHtml(w.color)}"></div><div class="shippou-bg"></div>`;
     card.innerHTML = `
       <div class="work-thumb">
         ${media}
@@ -3606,165 +3621,167 @@
     });
   }
 
-  try{
-    const siteSearchToggle = document.getElementById('siteSearchToggle');
-    const siteSearchPanel = document.getElementById('siteSearchPanel');
-    const siteSearchInput = document.getElementById('siteSearchInput');
-    const siteSearchResults = document.getElementById('siteSearchResults');
-    const siteSearchEmpty = document.getElementById('siteSearchEmpty');
-
-    // 日本語で検索しても、サイト内の英語表記(カテゴリ名やページ名)に
-    // ちゃんとヒットするようにするための、簡単な対訳辞書。
-    // 「キー」が英語表記、値の配列がその日本語の言い換え。
-    const SEARCH_SYNONYMS = {
-      'illustration': ['イラスト', 'イラストレーション', '絵'],
-      'music': ['音楽', '楽曲', '曲'],
-      'photography': ['写真', 'フォト', 'フォトグラフィー'],
-      'text': ['文章', 'テキスト'],
-      'novel': ['小説', '物語'],
-      'movie': ['映像', '動画', 'ムービー', '映画'],
-      'profile': ['プロフィール', '経歴'],
-      'contact': ['連絡先', 'お問い合わせ', 'コンタクト'],
-      'faq': ['よくある質問'],
-      'fan art': ['ファンアート'],
-      'guidelines': ['ガイドライン', '利用規約'],
-      'bookmarks': ['しおり', 'ブックマーク'],
-      'qr code': ['二次元コード', 'キューアール'],
-      'home': ['ホーム', 'トップ'],
-      'works': ['作品']
-    };
-    // 英語のカテゴリ名(例:"Illustration")を、対応する日本語の言い換えを
-    // 空白区切りで並べた文字列にする。検索対象のテキストに混ぜ込んで使う。
-    function jaSynonymsFor(enWord){
-      const list = SEARCH_SYNONYMS[String(enWord || '').toLowerCase()];
-      return list ? list.join(' ') : '';
-    }
-
-    function buildSiteIndex(){
-      const index = [
-        { section:'Home', sectionEn:'Home', anchor:'#top',
-          textJa:'手を動かし、静けさを、かたちに。季節がひとつ過ぎるあいだに、ひとつ何かをつくる。急がずに、けれど手を止めずに。 ホーム トップ',
-          textEn:'Making things by hand, giving shape to quiet. One thing made, each time a season passes. Unhurried, yet never still. Home' },
-        { section:'プロフィール', sectionEn:'Profile', anchor:'#profile',
-          textJa:'鴛照昧琉 おしてまいる 会社員として働くかたわら、休日に絵と文章をつくっています。大きなものより、手のひらに収まる小さな発見を集めることが好きです。紙と鉛筆から始まり、いまはデジタルと工芸のあいだを行き来しながら制作しています。私家版の作品集です。 プロフィール 経歴',
-          textEn:'Oshitemairu. Works as an office employee, makes illustrations and writing on days off. Drawn to small discoveries. Started with paper and pencil, now moves between digital work and craft. Profile' },
-        { section:'作品', sectionEn:'Works', anchor:'#works',
-          textJa:'作品 イラスト 音楽 楽曲 小説 一覧',
-          textEn:'Works Illustration Music gallery' },
-        { section:'お問い合わせ', sectionEn:'Contact', anchor:'#contact',
-          textJa:'お問い合わせ お仕事のご相談 展示のご案内 メールを送る oshitemail55@gmail.com 連絡先',
-          textEn:'Contact work inquiries exhibitions send an email' },
-
-        { section:'ファンアート', sectionEn:'Fan Art', anchor:'fanart.html', external:true,
-          textJa:'ファンアート みなさんが描いてくださった作品を紹介するページ 投稿',
-          textEn:'Fan Art submissions from visitors' },
-        { section:'FAQ', sectionEn:'FAQ', anchor:'faq.html', external:true,
-          textJa:'FAQ よくある質問 ガイドライン 著作権 利用規約 二次創作について ご依頼について ご依頼の流れ 金額の目安 5000円 20000円 納期 2〜4週間 ヒアリング ラフ提出 修正 納品',
-          textEn:'FAQ guidelines copyright terms of use commission process price range 2 to 4 weeks rough sketch revisions delivery' },
-        { section:'Music', sectionEn:'Music', anchor:'music.html', external:true,
-          textJa:'音楽 楽曲 作曲した曲を紹介するページ',
-          textEn:'Music original tracks I have composed' },
-        { section:'Novel', sectionEn:'Novel', anchor:'novel.html', external:true,
-          textJa:'小説 掌編 書いた物語を紹介するページ',
-          textEn:'Novel short stories and pieces of writing' },
-        { section:'Movie', sectionEn:'Movie', anchor:'movie.html', external:true,
-          textJa:'映像 動画 制作した映像作品を紹介するページ',
-          textEn:'Movie video works I have created' }
-      ];
-      if(typeof window.worksData !== 'undefined'){
-        window.worksData.forEach((w)=>{
-          index.push({
-            section:'作品', sectionEn:'Works', anchor:'#works', workId:w.id,
-            textJa:`${w.title} ${w.sub} ${jaSynonymsFor(w.sub)} ${w.year} ${w.desc}`,
-            textEn:`${w.titleEn} ${w.sub} ${w.year} ${w.descEn}`
+  deferUntilLoaderFinished(function(){
+    try{
+      const siteSearchToggle = document.getElementById('siteSearchToggle');
+      const siteSearchPanel = document.getElementById('siteSearchPanel');
+      const siteSearchInput = document.getElementById('siteSearchInput');
+      const siteSearchResults = document.getElementById('siteSearchResults');
+      const siteSearchEmpty = document.getElementById('siteSearchEmpty');
+  
+      // 日本語で検索しても、サイト内の英語表記(カテゴリ名やページ名)に
+      // ちゃんとヒットするようにするための、簡単な対訳辞書。
+      // 「キー」が英語表記、値の配列がその日本語の言い換え。
+      const SEARCH_SYNONYMS = {
+        'illustration': ['イラスト', 'イラストレーション', '絵'],
+        'music': ['音楽', '楽曲', '曲'],
+        'photography': ['写真', 'フォト', 'フォトグラフィー'],
+        'text': ['文章', 'テキスト'],
+        'novel': ['小説', '物語'],
+        'movie': ['映像', '動画', 'ムービー', '映画'],
+        'profile': ['プロフィール', '経歴'],
+        'contact': ['連絡先', 'お問い合わせ', 'コンタクト'],
+        'faq': ['よくある質問'],
+        'fan art': ['ファンアート'],
+        'guidelines': ['ガイドライン', '利用規約'],
+        'bookmarks': ['しおり', 'ブックマーク'],
+        'qr code': ['二次元コード', 'キューアール'],
+        'home': ['ホーム', 'トップ'],
+        'works': ['作品']
+      };
+      // 英語のカテゴリ名(例:"Illustration")を、対応する日本語の言い換えを
+      // 空白区切りで並べた文字列にする。検索対象のテキストに混ぜ込んで使う。
+      function jaSynonymsFor(enWord){
+        const list = SEARCH_SYNONYMS[String(enWord || '').toLowerCase()];
+        return list ? list.join(' ') : '';
+      }
+  
+      function buildSiteIndex(){
+        const index = [
+          { section:'Home', sectionEn:'Home', anchor:'#top',
+            textJa:'手を動かし、静けさを、かたちに。季節がひとつ過ぎるあいだに、ひとつ何かをつくる。急がずに、けれど手を止めずに。 ホーム トップ',
+            textEn:'Making things by hand, giving shape to quiet. One thing made, each time a season passes. Unhurried, yet never still. Home' },
+          { section:'プロフィール', sectionEn:'Profile', anchor:'#profile',
+            textJa:'鴛照昧琉 おしてまいる 会社員として働くかたわら、休日に絵と文章をつくっています。大きなものより、手のひらに収まる小さな発見を集めることが好きです。紙と鉛筆から始まり、いまはデジタルと工芸のあいだを行き来しながら制作しています。私家版の作品集です。 プロフィール 経歴',
+            textEn:'Oshitemairu. Works as an office employee, makes illustrations and writing on days off. Drawn to small discoveries. Started with paper and pencil, now moves between digital work and craft. Profile' },
+          { section:'作品', sectionEn:'Works', anchor:'#works',
+            textJa:'作品 イラスト 音楽 楽曲 小説 一覧',
+            textEn:'Works Illustration Music gallery' },
+          { section:'お問い合わせ', sectionEn:'Contact', anchor:'#contact',
+            textJa:'お問い合わせ お仕事のご相談 展示のご案内 メールを送る oshitemail55@gmail.com 連絡先',
+            textEn:'Contact work inquiries exhibitions send an email' },
+  
+          { section:'ファンアート', sectionEn:'Fan Art', anchor:'fanart.html', external:true,
+            textJa:'ファンアート みなさんが描いてくださった作品を紹介するページ 投稿',
+            textEn:'Fan Art submissions from visitors' },
+          { section:'FAQ', sectionEn:'FAQ', anchor:'faq.html', external:true,
+            textJa:'FAQ よくある質問 ガイドライン 著作権 利用規約 二次創作について ご依頼について ご依頼の流れ 金額の目安 5000円 20000円 納期 2〜4週間 ヒアリング ラフ提出 修正 納品',
+            textEn:'FAQ guidelines copyright terms of use commission process price range 2 to 4 weeks rough sketch revisions delivery' },
+          { section:'Music', sectionEn:'Music', anchor:'music.html', external:true,
+            textJa:'音楽 楽曲 作曲した曲を紹介するページ',
+            textEn:'Music original tracks I have composed' },
+          { section:'Novel', sectionEn:'Novel', anchor:'novel.html', external:true,
+            textJa:'小説 掌編 書いた物語を紹介するページ',
+            textEn:'Novel short stories and pieces of writing' },
+          { section:'Movie', sectionEn:'Movie', anchor:'movie.html', external:true,
+            textJa:'映像 動画 制作した映像作品を紹介するページ',
+            textEn:'Movie video works I have created' }
+        ];
+        if(typeof window.worksData !== 'undefined'){
+          window.worksData.forEach((w)=>{
+            index.push({
+              section:'作品', sectionEn:'Works', anchor:'#works', workId:w.id,
+              textJa:`${w.title} ${w.sub} ${jaSynonymsFor(w.sub)} ${w.year} ${w.desc}`,
+              textEn:`${w.titleEn} ${w.sub} ${w.year} ${w.descEn}`
+            });
           });
-        });
-      }
-      return index;
-    }
-    const siteIndex = buildSiteIndex();
-
-    function snippetFor(entry){
-      const text = isEnglish() ? entry.textEn : entry.textJa;
-      return text.length > 34 ? text.slice(0, 34) + '…' : text;
-    }
-
-    // クエリが辞書に載っている語(英語・日本語どちらでも)と一致・部分一致したら、
-    // その言い換え(対訳)もすべて検索候補に加える。例えば「イラスト」と検索したら
-    // 「illustration」も一緒に調べる、という双方向の変換をここで行う。
-    function expandQuery(q){
-      const variants = new Set([q]);
-      Object.keys(SEARCH_SYNONYMS).forEach(enWord=>{
-        const jaWords = SEARCH_SYNONYMS[enWord];
-        const allWords = [enWord, ...jaWords];
-        const matched = allWords.some(w => w.toLowerCase() === q || q.includes(w.toLowerCase()) || w.toLowerCase().includes(q));
-        if(matched){
-          allWords.forEach(w => variants.add(w.toLowerCase()));
         }
-      });
-      return Array.from(variants);
-    }
-
-    // 「いかにもコードのような文字列」での検索は、結果を出さずに弾く
-    // (表示側はescapeHtmlで無害化済みだが、そもそも検索自体させない追加の防御層)。
-    const SEARCH_CODE_LIKE_PATTERN = /<\s{0,10}(script|iframe|object|embed|svg|img|style|link|meta|form|body|a)\b|javascript\s{0,10}:|data\s{0,10}:\s{0,10}text\/html|on[a-zA-Z]{1,20}\s{0,10}=|document\s{0,10}\.\s{0,10}\w|window\s{0,10}\.\s{0,10}\w|eval\s{0,10}\(|<%|%>|\$\{/i;
-    const CODE_LIKE_MAX_LENGTH_SEARCH = 2000;
-    function searchContainsCodeLikeContent(text){
-      if(typeof text !== 'string') return false;
-      if(text.length > CODE_LIKE_MAX_LENGTH_SEARCH) return true;
-      const normalized = text.normalize('NFKC');
-      const stripped = normalized.replace(/[\s\u200B-\u200D\uFEFF]/g, '');
-      return SEARCH_CODE_LIKE_PATTERN.test(normalized) || SEARCH_CODE_LIKE_PATTERN.test(stripped);
-    }
-    function renderResults(query){
-      query = query.slice(0, 20); // 念のため、こちらでも文字数を20字までに制限する
-      siteSearchResults.innerHTML = '';
-      if(query === '' || searchContainsCodeLikeContent(query)){
-        siteSearchEmpty.hidden = true;
-        return;
+        return index;
       }
-      const q = query.toLowerCase();
-      const queryVariants = expandQuery(q);
-      const scored = siteIndex.map(entry=>{
-        const haystack = (entry.textJa + ' ' + entry.textEn).toLowerCase();
-        // 複数の言い換え候補それぞれで採点し、一番良かったスコアを採用する。
-        const bestScore = Math.max(...queryVariants.map(v => fuzzyScore(v, haystack)));
-        return { entry, score: bestScore };
-      }).filter(x => x.score > 0);
-      scored.sort((a,b)=> b.score - a.score);
-      const matches = scored.slice(0, 8).map(x => x.entry);
-
-      siteSearchEmpty.hidden = matches.length > 0;
-      matches.forEach(entry=>{
-        const li = document.createElement('li');
-        const a = document.createElement('a');
-        a.href = entry.anchor;
-        a.innerHTML = `<span class="site-search-result-section">${escapeHtml(isEnglish() ? entry.sectionEn : entry.section)}</span><span class="site-search-result-snippet">${escapeHtml(snippetFor(entry))}</span>`;
-        a.addEventListener('click', (e)=>{
-          e.preventDefault();
-          searchPanelCtl.close();
-          if(entry.external){
-            window.location.href = entry.anchor;
-            return;
-          }
-          document.querySelector(entry.anchor).scrollIntoView({ behavior:'smooth' });
-          if(entry.workId){
-            const idx = (window.worksData || works).findIndex(x => x.id === entry.workId);
-            if(idx !== -1) setTimeout(()=> openLightbox(idx), 500);
+      const siteIndex = buildSiteIndex();
+  
+      function snippetFor(entry){
+        const text = isEnglish() ? entry.textEn : entry.textJa;
+        return text.length > 34 ? text.slice(0, 34) + '…' : text;
+      }
+  
+      // クエリが辞書に載っている語(英語・日本語どちらでも)と一致・部分一致したら、
+      // その言い換え(対訳)もすべて検索候補に加える。例えば「イラスト」と検索したら
+      // 「illustration」も一緒に調べる、という双方向の変換をここで行う。
+      function expandQuery(q){
+        const variants = new Set([q]);
+        Object.keys(SEARCH_SYNONYMS).forEach(enWord=>{
+          const jaWords = SEARCH_SYNONYMS[enWord];
+          const allWords = [enWord, ...jaWords];
+          const matched = allWords.some(w => w.toLowerCase() === q || q.includes(w.toLowerCase()) || w.toLowerCase().includes(q));
+          if(matched){
+            allWords.forEach(w => variants.add(w.toLowerCase()));
           }
         });
-        li.appendChild(a);
-        siteSearchResults.appendChild(li);
-      });
-    }
-
-    const searchPanelCtl = bindPanelToggle(
-      siteSearchToggle, siteSearchPanel,
-      ()=> siteSearchInput.focus(),
-      ()=>{ siteSearchInput.value = ''; siteSearchResults.innerHTML = ''; siteSearchEmpty.hidden = true; }
-    );
-    siteSearchInput.addEventListener('input', ()=> renderResults(siteSearchInput.value.trim()));
-  }catch(err){ console.error('site search init failed:', err); }
+        return Array.from(variants);
+      }
+  
+      // 「いかにもコードのような文字列」での検索は、結果を出さずに弾く
+      // (表示側はescapeHtmlで無害化済みだが、そもそも検索自体させない追加の防御層)。
+      const SEARCH_CODE_LIKE_PATTERN = /<\s{0,10}(script|iframe|object|embed|svg|img|style|link|meta|form|body|a)\b|javascript\s{0,10}:|data\s{0,10}:\s{0,10}text\/html|on[a-zA-Z]{1,20}\s{0,10}=|document\s{0,10}\.\s{0,10}\w|window\s{0,10}\.\s{0,10}\w|eval\s{0,10}\(|<%|%>|\$\{/i;
+      const CODE_LIKE_MAX_LENGTH_SEARCH = 2000;
+      function searchContainsCodeLikeContent(text){
+        if(typeof text !== 'string') return false;
+        if(text.length > CODE_LIKE_MAX_LENGTH_SEARCH) return true;
+        const normalized = text.normalize('NFKC');
+        const stripped = normalized.replace(/[\s\u200B-\u200D\uFEFF]/g, '');
+        return SEARCH_CODE_LIKE_PATTERN.test(normalized) || SEARCH_CODE_LIKE_PATTERN.test(stripped);
+      }
+      function renderResults(query){
+        query = query.slice(0, 20); // 念のため、こちらでも文字数を20字までに制限する
+        siteSearchResults.innerHTML = '';
+        if(query === '' || searchContainsCodeLikeContent(query)){
+          siteSearchEmpty.hidden = true;
+          return;
+        }
+        const q = query.toLowerCase();
+        const queryVariants = expandQuery(q);
+        const scored = siteIndex.map(entry=>{
+          const haystack = (entry.textJa + ' ' + entry.textEn).toLowerCase();
+          // 複数の言い換え候補それぞれで採点し、一番良かったスコアを採用する。
+          const bestScore = Math.max(...queryVariants.map(v => fuzzyScore(v, haystack)));
+          return { entry, score: bestScore };
+        }).filter(x => x.score > 0);
+        scored.sort((a,b)=> b.score - a.score);
+        const matches = scored.slice(0, 8).map(x => x.entry);
+  
+        siteSearchEmpty.hidden = matches.length > 0;
+        matches.forEach(entry=>{
+          const li = document.createElement('li');
+          const a = document.createElement('a');
+          a.href = entry.anchor;
+          a.innerHTML = `<span class="site-search-result-section">${escapeHtml(isEnglish() ? entry.sectionEn : entry.section)}</span><span class="site-search-result-snippet">${escapeHtml(snippetFor(entry))}</span>`;
+          a.addEventListener('click', (e)=>{
+            e.preventDefault();
+            searchPanelCtl.close();
+            if(entry.external){
+              window.location.href = entry.anchor;
+              return;
+            }
+            document.querySelector(entry.anchor).scrollIntoView({ behavior:'smooth' });
+            if(entry.workId){
+              const idx = (window.worksData || works).findIndex(x => x.id === entry.workId);
+              if(idx !== -1) setTimeout(()=> openLightbox(idx), 500);
+            }
+          });
+          li.appendChild(a);
+          siteSearchResults.appendChild(li);
+        });
+      }
+  
+      const searchPanelCtl = bindPanelToggle(
+        siteSearchToggle, siteSearchPanel,
+        ()=> siteSearchInput.focus(),
+        ()=>{ siteSearchInput.value = ''; siteSearchResults.innerHTML = ''; siteSearchEmpty.hidden = true; }
+      );
+      siteSearchInput.addEventListener('input', ()=> renderResults(siteSearchInput.value.trim()));
+    }catch(err){ console.error('site search init failed:', err); }
+  });
 
   try{
     const settingsToggle = document.getElementById('settingsToggle');
@@ -4150,105 +4167,109 @@
     });
   }catch(err){ console.error('rewatch init failed:', err); }
 
-  try{
-    const qrBackdrop = document.getElementById('qrBackdrop');
-    const qrModal = document.getElementById('qrModal');
-    const navQr = document.getElementById('navQr');
-    // 前景を墨色、背景を生成り色にすることで、和の色味を保ちつつ、
-    // 通常の白黒QRコードと同じくらいの高いコントラストを確保している(読み取りやすさ優先)。
-    // 色そのものはテーマ(ライト/ダーク)に関わらず、常にこの2色で固定。
-    function qrImageUrl(url){
-      return 'https://api.qrserver.com/v1/create-qr-code/?size=192x192'
-        + '&color=221F1B&bgcolor=F6F1E6'
-        + '&data=' + encodeURIComponent(url);
-    }
-    const qrUrl = location.origin + location.pathname;
-    // モーダルを開く前に、あらかじめ画像を読み込んでおく(プリロード)。
-    // こうしておくと、実際にモーダルを開いた瞬間には既に読み込みが
-    // 終わっているため、体感の表示速度が大きく速くなる。
-    const qrPreload = new Image();
-    qrPreload.src = qrImageUrl(qrUrl);
-    function fillQrContent(){
-      document.getElementById('qrImage').src = qrImageUrl(qrUrl);
-      document.getElementById('qrUrlText').textContent = qrUrl;
-    }
-    const qrCtl = bindSheetModal(qrBackdrop, qrModal, 300, fillQrContent);
-    navQr.addEventListener('click', (e)=>{ e.preventDefault(); qrCtl.open(); });
-    document.getElementById('qrClose').addEventListener('click', qrCtl.close);
-  }catch(err){ console.error('qr code init failed:', err); }
-
-  try{
-    // Musicページで公開している曲と同じ内容。曲を増やす時は、Musicページの
-    // 曲一覧に追加するのに合わせて、ここにも同じ形で1行追加してください。
-    const BGM_TRACKS = [
-      { title:'灯りをともす', src:'' },
-      { title:'庭の記録', src:'' }
-    ];
-
-    const bgmToggle = document.getElementById('bgmToggle');
-    const bgmPrevBtn = document.getElementById('bgmPrevBtn');
-    const bgmNextBtn = document.getElementById('bgmNextBtn');
-    const bgmAudio = document.getElementById('bgmAudio');
-    const bgmTrackName = document.getElementById('bgmTrackName');
-    const playIcon = bgmToggle.querySelector('.bgm-icon-play');
-    const pauseIcon = bgmToggle.querySelector('.bgm-icon-pause');
-    let bgmClickCount = 0;
-    let bgmIndex = 0;
-    let bgmLoaded = false;
-
-    function setPlayingUi(playing){
-      bgmToggle.setAttribute('aria-pressed', String(playing));
-      bgmToggle.setAttribute('aria-label', playing ? 'BGMを停止' : 'BGMを再生');
-      playIcon.hidden = playing;
-      pauseIcon.hidden = !playing;
-    }
-
-    // 指定した番号の曲を読み込む。keepPlayingがtrueなら、読み込み後すぐに再生を始める
-    // (「次の曲」「前の曲」ボタンを、再生中に押した時に、途切れず続けて聴けるようにするため)。
-    function loadBgmTrack(index, keepPlaying){
-      const total = BGM_TRACKS.length;
-      bgmIndex = ((index % total) + total) % total; // 最初/最後を超えたら、反対側に循環する
-      const track = BGM_TRACKS[bgmIndex];
-      bgmAudio.src = track.src || '';
-      bgmTrackName.textContent = track.title || '';
-      bgmLoaded = true;
-      if(keepPlaying && track.src){
-        bgmAudio.play().catch(()=>{});
+  deferUntilLoaderFinished(function(){
+    try{
+      const qrBackdrop = document.getElementById('qrBackdrop');
+      const qrModal = document.getElementById('qrModal');
+      const navQr = document.getElementById('navQr');
+      // 前景を墨色、背景を生成り色にすることで、和の色味を保ちつつ、
+      // 通常の白黒QRコードと同じくらいの高いコントラストを確保している(読み取りやすさ優先)。
+      // 色そのものはテーマ(ライト/ダーク)に関わらず、常にこの2色で固定。
+      function qrImageUrl(url){
+        return 'https://api.qrserver.com/v1/create-qr-code/?size=192x192'
+          + '&color=221F1B&bgcolor=F6F1E6'
+          + '&data=' + encodeURIComponent(url);
       }
-    }
-
-    bgmToggle.addEventListener('click', ()=>{
-      bgmClickCount++;
-      if(bgmClickCount >= 10 && typeof AchievementModule !== 'undefined' && AchievementModule.isLoggedIn()){
-        AchievementModule.unlock('bgm-mania');
+      const qrUrl = location.origin + location.pathname;
+      // モーダルを開く前に、あらかじめ画像を読み込んでおく(プリロード)。
+      // こうしておくと、実際にモーダルを開いた瞬間には既に読み込みが
+      // 終わっているため、体感の表示速度が大きく速くなる。
+      const qrPreload = new Image();
+      qrPreload.src = qrImageUrl(qrUrl);
+      function fillQrContent(){
+        document.getElementById('qrImage').src = qrImageUrl(qrUrl);
+        document.getElementById('qrUrlText').textContent = qrUrl;
       }
-      if(!bgmLoaded) loadBgmTrack(0, false);
-      if(bgmAudio.paused){
-        bgmAudio.play().catch(()=>{
-          console.warn('BGM再生に失敗しました。音声ファイルが未設定の可能性があります。');
-        });
-        setPlayingUi(true);
-      }else{
-        bgmAudio.pause();
-        setPlayingUi(false);
-      }
-    });
+      const qrCtl = bindSheetModal(qrBackdrop, qrModal, 300, fillQrContent);
+      navQr.addEventListener('click', (e)=>{ e.preventDefault(); qrCtl.open(); });
+      document.getElementById('qrClose').addEventListener('click', qrCtl.close);
+    }catch(err){ console.error('qr code init failed:', err); }
+  });
 
-    bgmPrevBtn.addEventListener('click', ()=>{
-      if(!bgmLoaded) loadBgmTrack(0, false);
-      loadBgmTrack(bgmIndex - 1, !bgmAudio.paused);
-    });
-    bgmNextBtn.addEventListener('click', ()=>{
-      if(!bgmLoaded) loadBgmTrack(0, false);
-      loadBgmTrack(bgmIndex + 1, !bgmAudio.paused);
-    });
-    // 1曲が終わったら、自動的に次の曲へ進む(最後の曲の場合は、最初の曲に戻る)。
-    bgmAudio.addEventListener('ended', ()=>{
-      loadBgmTrack(bgmIndex + 1, true);
-    });
-    bgmAudio.addEventListener('play', ()=> setPlayingUi(true));
-    bgmAudio.addEventListener('pause', ()=> setPlayingUi(false));
-  }catch(err){ console.error('bgm toggle init failed:', err); }
+  deferUntilLoaderFinished(function(){
+    try{
+      // Musicページで公開している曲と同じ内容。曲を増やす時は、Musicページの
+      // 曲一覧に追加するのに合わせて、ここにも同じ形で1行追加してください。
+      const BGM_TRACKS = [
+        { title:'灯りをともす', src:'' },
+        { title:'庭の記録', src:'' }
+      ];
+  
+      const bgmToggle = document.getElementById('bgmToggle');
+      const bgmPrevBtn = document.getElementById('bgmPrevBtn');
+      const bgmNextBtn = document.getElementById('bgmNextBtn');
+      const bgmAudio = document.getElementById('bgmAudio');
+      const bgmTrackName = document.getElementById('bgmTrackName');
+      const playIcon = bgmToggle.querySelector('.bgm-icon-play');
+      const pauseIcon = bgmToggle.querySelector('.bgm-icon-pause');
+      let bgmClickCount = 0;
+      let bgmIndex = 0;
+      let bgmLoaded = false;
+  
+      function setPlayingUi(playing){
+        bgmToggle.setAttribute('aria-pressed', String(playing));
+        bgmToggle.setAttribute('aria-label', playing ? 'BGMを停止' : 'BGMを再生');
+        playIcon.hidden = playing;
+        pauseIcon.hidden = !playing;
+      }
+  
+      // 指定した番号の曲を読み込む。keepPlayingがtrueなら、読み込み後すぐに再生を始める
+      // (「次の曲」「前の曲」ボタンを、再生中に押した時に、途切れず続けて聴けるようにするため)。
+      function loadBgmTrack(index, keepPlaying){
+        const total = BGM_TRACKS.length;
+        bgmIndex = ((index % total) + total) % total; // 最初/最後を超えたら、反対側に循環する
+        const track = BGM_TRACKS[bgmIndex];
+        bgmAudio.src = track.src || '';
+        bgmTrackName.textContent = track.title || '';
+        bgmLoaded = true;
+        if(keepPlaying && track.src){
+          bgmAudio.play().catch(()=>{});
+        }
+      }
+  
+      bgmToggle.addEventListener('click', ()=>{
+        bgmClickCount++;
+        if(bgmClickCount >= 10 && typeof AchievementModule !== 'undefined' && AchievementModule.isLoggedIn()){
+          AchievementModule.unlock('bgm-mania');
+        }
+        if(!bgmLoaded) loadBgmTrack(0, false);
+        if(bgmAudio.paused){
+          bgmAudio.play().catch(()=>{
+            console.warn('BGM再生に失敗しました。音声ファイルが未設定の可能性があります。');
+          });
+          setPlayingUi(true);
+        }else{
+          bgmAudio.pause();
+          setPlayingUi(false);
+        }
+      });
+  
+      bgmPrevBtn.addEventListener('click', ()=>{
+        if(!bgmLoaded) loadBgmTrack(0, false);
+        loadBgmTrack(bgmIndex - 1, !bgmAudio.paused);
+      });
+      bgmNextBtn.addEventListener('click', ()=>{
+        if(!bgmLoaded) loadBgmTrack(0, false);
+        loadBgmTrack(bgmIndex + 1, !bgmAudio.paused);
+      });
+      // 1曲が終わったら、自動的に次の曲へ進む(最後の曲の場合は、最初の曲に戻る)。
+      bgmAudio.addEventListener('ended', ()=>{
+        loadBgmTrack(bgmIndex + 1, true);
+      });
+      bgmAudio.addEventListener('play', ()=> setPlayingUi(true));
+      bgmAudio.addEventListener('pause', ()=> setPlayingUi(false));
+    }catch(err){ console.error('bgm toggle init failed:', err); }
+  });
 
   if(profileImage){
     const p = document.querySelector('.portrait');
@@ -4273,13 +4294,13 @@
     const t = currentWorkText(w);
     const lbImg = document.getElementById('lbImg');
     if(w.img){
-      lbImg.innerHTML = `<div class="lb-img-zoom-target"><img class="blur-load" src="${w.img}" alt="${t.title}" style="width:100%;height:100%;object-fit:cover;" onload="this.classList.add('loaded')"></div>`;
+      lbImg.innerHTML = `<div class="lb-img-zoom-target"><img class="blur-load" src="${escapeHtml(w.img)}" alt="${escapeHtml(t.title)}" style="width:100%;height:100%;object-fit:cover;" onload="this.classList.add('loaded')"></div>`;
     }else{
       const patternSvg = 'url(&quot;data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'40\' height=\'40\'%3E%3Cpath d=\'M40 0H0V40\' fill=\'none\' stroke=\'rgba(255,255,255,0.18)\' stroke-width=\'1\'/%3E%3C/svg%3E&quot;)';
       const isGradient = /^(linear|radial|conic)-gradient\(/.test(w.color);
       const bgStyle = isGradient
-        ? `background-image:${patternSvg}, ${w.color};`
-        : `background-color:${w.color}; background-image:${patternSvg};`;
+        ? `background-image:${patternSvg}, ${escapeHtml(w.color)};`
+        : `background-color:${escapeHtml(w.color)}; background-image:${patternSvg};`;
       lbImg.innerHTML = `<div class="lb-img-zoom-target" style="width:100%;height:100%;${bgStyle}"></div>`;
     }
     document.getElementById('lbNo').textContent = workNo(i);
@@ -4654,6 +4675,7 @@
       if(typeof refreshWorksGridLanguage === 'function') refreshWorksGridLanguage();
       if(typeof refreshLightboxLanguage === 'function') refreshLightboxLanguage();
       if(typeof refreshWorksToggleLanguage === 'function') refreshWorksToggleLanguage();
+      if(typeof window.refreshOwnCommentsLanguage === 'function') window.refreshOwnCommentsLanguage();
 
       langToggle.textContent = lang === 'en' ? '日本語' : 'English';
       langToggle.setAttribute('aria-label', lang === 'en' ? 'Switch to Japanese' : 'Switch to English');
@@ -4670,335 +4692,338 @@
   })();
   }catch(err){ console.error('language toggle init failed:', err); }
 
-  try{
-  (function(){
-    const MAIL_TO = 'oshitemail55@gmail.com';
-    // 「いかにもコードのような文字列」を検知するための、簡易的なパターン一覧。
-    // これだけで完璧に見抜けるわけではないが(表示側は別途escapeHtmlで無害化済み)、
-    // そもそも、そういった内容の送信自体を入り口で断る、追加の防御層として使う。
-    const CODE_LIKE_PATTERN = /<\s{0,10}(script|iframe|object|embed|svg|img|style|link|meta|form|body|a)\b|javascript\s{0,10}:|data\s{0,10}:\s{0,10}text\/html|on[a-zA-Z]{1,20}\s{0,10}=|document\s{0,10}\.\s{0,10}\w|window\s{0,10}\.\s{0,10}\w|eval\s{0,10}\(|<%|%>|\$\{/i;
-    const CODE_LIKE_MAX_LENGTH = 2000;
-    function containsCodeLikeContent(text){
-      if(typeof text !== 'string') return false;
-      if(text.length > CODE_LIKE_MAX_LENGTH) return true;
-      const normalized = text.normalize('NFKC');
-      const stripped = normalized.replace(/[\s\u200B-\u200D\uFEFF]/g, '');
-      return CODE_LIKE_PATTERN.test(normalized) || CODE_LIKE_PATTERN.test(stripped);
-    }
-    const mailBtnOpen = document.getElementById('mailBtnOpen');
-    const mailModal = document.getElementById('mailModal');
-    const mailClose = document.getElementById('mailClose');
-    const mailForm = document.getElementById('mailForm');
-    const providerPicker = document.getElementById('mailProviderPicker');
-    const providerBack = document.getElementById('mailProviderBack');
-    let lastFocused = null;
-    let pendingMessage = null;
-
-    // 書いている途中に、誤ってページを閉じてしまっても、内容が消えないようにする。
-    // 入力するたびに、こっそり端末内(このブラウザだけ)に保存しておき、
-    // 次にフォームを開いた時に、自動で復元する。送信が終わったら、消す。
-    const MAIL_DRAFT_KEY = 'mail-draft';
-    function saveMailDraft(){
-      try{
-        const draft = {
-          name: document.getElementById('mailName').value,
-          from: document.getElementById('mailFrom').value,
-          message: document.getElementById('mailBody').value,
-        };
-        if(!draft.name && !draft.from && !draft.message){
-          localStorage.removeItem(MAIL_DRAFT_KEY);
-        }else{
-          localStorage.setItem(MAIL_DRAFT_KEY, JSON.stringify(draft));
-        }
-      }catch(e){}
-    }
-    function restoreMailDraft(){
-      try{
-        const raw = localStorage.getItem(MAIL_DRAFT_KEY);
-        if(!raw) return;
-        const draft = JSON.parse(raw);
-        document.getElementById('mailName').value = draft.name || '';
-        document.getElementById('mailFrom').value = draft.from || '';
-        document.getElementById('mailBody').value = draft.message || '';
-        // 文字数カウンターも、復元した内容に合わせて更新する
+  deferUntilLoaderFinished(function(){
+    try{
+    (function(){
+      const MAIL_TO = 'oshitemail55@gmail.com';
+      // 「いかにもコードのような文字列」を検知するための、簡易的なパターン一覧。
+      // これだけで完璧に見抜けるわけではないが(表示側は別途escapeHtmlで無害化済み)、
+      // そもそも、そういった内容の送信自体を入り口で断る、追加の防御層として使う。
+      const CODE_LIKE_PATTERN = /<\s{0,10}(script|iframe|object|embed|svg|img|style|link|meta|form|body|a)\b|javascript\s{0,10}:|data\s{0,10}:\s{0,10}text\/html|on[a-zA-Z]{1,20}\s{0,10}=|document\s{0,10}\.\s{0,10}\w|window\s{0,10}\.\s{0,10}\w|eval\s{0,10}\(|<%|%>|\$\{/i;
+      const CODE_LIKE_MAX_LENGTH = 2000;
+      function containsCodeLikeContent(text){
+        if(typeof text !== 'string') return false;
+        if(text.length > CODE_LIKE_MAX_LENGTH) return true;
+        const normalized = text.normalize('NFKC');
+        const stripped = normalized.replace(/[\s\u200B-\u200D\uFEFF]/g, '');
+        return CODE_LIKE_PATTERN.test(normalized) || CODE_LIKE_PATTERN.test(stripped);
+      }
+      const mailBtnOpen = document.getElementById('mailBtnOpen');
+      const mailModal = document.getElementById('mailModal');
+      const mailClose = document.getElementById('mailClose');
+      const mailForm = document.getElementById('mailForm');
+      const providerPicker = document.getElementById('mailProviderPicker');
+      const providerBack = document.getElementById('mailProviderBack');
+      let lastFocused = null;
+      let pendingMessage = null;
+  
+      // 書いている途中に、誤ってページを閉じてしまっても、内容が消えないようにする。
+      // 入力するたびに、こっそり端末内(このブラウザだけ)に保存しておき、
+      // 次にフォームを開いた時に、自動で復元する。送信が終わったら、消す。
+      const MAIL_DRAFT_KEY = 'mail-draft';
+      function saveMailDraft(){
+        try{
+          const draft = {
+            name: document.getElementById('mailName').value,
+            from: document.getElementById('mailFrom').value,
+            message: document.getElementById('mailBody').value,
+          };
+          if(!draft.name && !draft.from && !draft.message){
+            localStorage.removeItem(MAIL_DRAFT_KEY);
+          }else{
+            localStorage.setItem(MAIL_DRAFT_KEY, JSON.stringify(draft));
+          }
+        }catch(e){}
+      }
+      function restoreMailDraft(){
+        try{
+          const raw = localStorage.getItem(MAIL_DRAFT_KEY);
+          if(!raw) return;
+          const draft = JSON.parse(raw);
+          document.getElementById('mailName').value = draft.name || '';
+          document.getElementById('mailFrom').value = draft.from || '';
+          document.getElementById('mailBody').value = draft.message || '';
+          // 文字数カウンターも、復元した内容に合わせて更新する
+          ['mailName', 'mailFrom', 'mailBody'].forEach(id=>{
+            document.getElementById(id).dispatchEvent(new Event('input'));
+          });
+        }catch(e){}
+      }
+      function clearMailDraft(){
+        try{ localStorage.removeItem(MAIL_DRAFT_KEY); }catch(e){}
+      }
+      // 送信済みの内容(「フォームに戻る」を押した時に、書いた内容を残すため、送信方法を選ぶまで、フォームは消さない)。
+      let lastSubmittedMail = null;
+      function finishMailSubmission(){
+        clearMailDraft();
+        mailForm.reset();
         ['mailName', 'mailFrom', 'mailBody'].forEach(id=>{
           document.getElementById(id).dispatchEvent(new Event('input'));
         });
-      }catch(e){}
-    }
-    function clearMailDraft(){
-      try{ localStorage.removeItem(MAIL_DRAFT_KEY); }catch(e){}
-    }
-    // 送信済みの内容(「フォームに戻る」を押した時に、書いた内容を残すため、送信方法を選ぶまで、フォームは消さない)。
-    let lastSubmittedMail = null;
-    function finishMailSubmission(){
-      clearMailDraft();
-      mailForm.reset();
+        lastSubmittedMail = null;
+      }
       ['mailName', 'mailFrom', 'mailBody'].forEach(id=>{
-        document.getElementById(id).dispatchEvent(new Event('input'));
+        document.getElementById(id).addEventListener('input', saveMailDraft);
       });
-      lastSubmittedMail = null;
-    }
-    ['mailName', 'mailFrom', 'mailBody'].forEach(id=>{
-      document.getElementById(id).addEventListener('input', saveMailDraft);
-    });
-
-    function openMailModal(){
-      lastFocused = document.activeElement;
-      showForm();
-      mailModal.classList.add('open');
-      document.body.style.overflow = 'hidden';
-      restoreMailDraft();
-      const firstField = document.getElementById('mailName');
-      if(firstField) firstField.focus();
-    }
-    function closeMailModal(){
-      mailModal.classList.remove('open');
-      document.body.style.overflow = '';
-      showForm();
-      resetPageZoom();
-      if(lastFocused && typeof lastFocused.focus === 'function'){
-        lastFocused.focus();
+  
+      function openMailModal(){
+        lastFocused = document.activeElement;
+        showForm();
+        mailModal.classList.add('open');
+        document.body.style.overflow = 'hidden';
+        restoreMailDraft();
+        const firstField = document.getElementById('mailName');
+        if(firstField) firstField.focus();
       }
-      lastFocused = null;
-    }
-    function resetPageZoom(){
-      const viewportMeta = document.querySelector('meta[name="viewport"]');
-      if(!viewportMeta) return;
-      const original = viewportMeta.getAttribute('content');
-      viewportMeta.setAttribute('content', original + ', maximum-scale=1.0');
-      requestAnimationFrame(()=>{
-        viewportMeta.setAttribute('content', original);
-      });
-    }
-    function showPicker(){
-      mailForm.hidden = true;
-      providerPicker.hidden = false;
-      resetPageZoom();
-    }
-    function showForm(){
-      providerPicker.hidden = true;
-      mailForm.hidden = false;
-    }
-
-    mailBtnOpen.addEventListener('click', ()=>{
-      setTimeout(openMailModal, 220);
-    });
-    mailClose.addEventListener('click', closeMailModal);
-    mailModal.addEventListener('click', (e)=>{ if(e.target === mailModal) closeMailModal(); });
-
-    if(location.hash === '#open-mail'){
-      document.getElementById('contact').scrollIntoView();
-      setTimeout(openMailModal, 700);
-    }
-
-    document.addEventListener('keydown', (e)=>{
-      if(e.key === 'Escape' && mailModal.classList.contains('open')) closeMailModal();
-    });
-    providerBack.addEventListener('click', showForm);
-
-    // 書いている間に、文字数の上限が見えるようにする(リアルタイムのカウンター表示)。
-    // 上限を超えても入力自体は止めず、超えた場合は赤字で知らせ、送信時にブロックする。
-    const MAIL_LIMITS = { mailName:30, mailFrom:100, mailBody:350 };
-    function wireCharCounter(fieldId, countId){
-      const field = document.getElementById(fieldId);
-      const countEl = document.getElementById(countId);
-      const limit = MAIL_LIMITS[fieldId];
-      function update(){
-        const len = field.value.length;
-        countEl.textContent = len + ' / ' + limit + '字';
-        countEl.classList.toggle('over-limit', len > limit);
+      function closeMailModal(){
+        mailModal.classList.remove('open');
+        document.body.style.overflow = '';
+        showForm();
+        resetPageZoom();
+        if(lastFocused && typeof lastFocused.focus === 'function'){
+          lastFocused.focus();
+        }
+        lastFocused = null;
       }
-      field.addEventListener('input', update);
-      update();
-    }
-    wireCharCounter('mailName', 'mailNameCount');
-    wireCharCounter('mailFrom', 'mailFromCount');
-    wireCharCounter('mailBody', 'mailBodyCount');
-
-    // メール送信の、サイト全体で共有する混雑防止(Platform投稿と同じ仕組み)。
-    // ログイン不要の機能のため、専用の別カウンター(mailRateLimit)を使う。
-    const MAIL_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
-    const MAIL_RATE_LIMIT_MAX = 40;
-    const MAIL_RATE_LIMIT_BLOCK_MS = 10 * 60 * 1000;
-    async function checkMailRateLimit(){
-      const fb = window.__siteFirebase;
-      if(!fb || !fb.ready) return true; // 未接続時は、誤検知でブロックしない
-      try{
-        const rateLimitRef = fb.doc(fb.db, 'siteConfig', 'mailRateLimit');
-        let isBusy = false;
-        await fb.runTransaction(fb.db, async (tx)=>{
-          const snap = await tx.get(rateLimitRef);
-          const data = snap.exists() ? snap.data() : {};
-          const now = Date.now();
-          if(data.blockedUntil && now < data.blockedUntil){
-            isBusy = true;
-            return;
-          }
-          let windowStart = data.windowStart || now;
-          let count = data.count || 0;
-          if(now - windowStart >= MAIL_RATE_LIMIT_WINDOW_MS){
-            windowStart = now;
-            count = 0;
-          }
-          count += 1;
-          if(count >= MAIL_RATE_LIMIT_MAX){
-            tx.set(rateLimitRef, { windowStart: now, count: 0, blockedUntil: now + MAIL_RATE_LIMIT_BLOCK_MS });
-          }else{
-            tx.set(rateLimitRef, { windowStart: windowStart, count: count, blockedUntil: null });
-          }
+      function resetPageZoom(){
+        const viewportMeta = document.querySelector('meta[name="viewport"]');
+        if(!viewportMeta) return;
+        const original = viewportMeta.getAttribute('content');
+        viewportMeta.setAttribute('content', original + ', maximum-scale=1.0');
+        requestAnimationFrame(()=>{
+          viewportMeta.setAttribute('content', original);
         });
-        return !isBusy;
-      }catch(err){
-        console.error('mail rate limit check failed:', err);
-        return true;
       }
-    }
-
-    mailForm.addEventListener('submit', async (e)=>{
-      e.preventDefault();
-      const name = document.getElementById('mailName').value.trim();
-      const from = document.getElementById('mailFrom').value.trim();
-      const message = document.getElementById('mailBody').value.trim();
-
-      if(name.length > MAIL_LIMITS.mailName || from.length > MAIL_LIMITS.mailFrom || message.length > MAIL_LIMITS.mailBody){
-        alert('文字数の上限を超えている項目があります。各項目の文字数をご確認の上、短くしてから送信してください。');
-        return;
+      function showPicker(){
+        mailForm.hidden = true;
+        providerPicker.hidden = false;
+        resetPageZoom();
       }
-
-      if(containsCodeLikeContent(name) || containsCodeLikeContent(from) || containsCodeLikeContent(message)){
-        alert('コードのような文字列は入力できません。内容をご確認の上、もう一度お試しください。');
-        return;
+      function showForm(){
+        providerPicker.hidden = true;
+        mailForm.hidden = false;
       }
-
-      // 「フォームに戻る」を押したあと、同じ内容で、もう一度送信ボタンを押した場合は、
-      // 保存も、連続送信の制限も、すでに済んでいるので、そのまま、送信方法の選択画面へ進む。
-      if(pendingMessage && lastSubmittedMail
-         && lastSubmittedMail.name === name && lastSubmittedMail.from === from && lastSubmittedMail.message === message){
-        showPicker();
-        return;
-      }
-
-      // 連続送信への抑止(荒らし対策)。ログイン不要の機能のため、
-      // このブラウザだけの簡易的な記録(localStorage)で、連打を防ぐ。
-      const MAIL_COOLDOWN_MS = 30000; // 30秒
-      const lastMailAt = Number(localStorage.getItem('mail-last-sent-at') || 0);
-      if(Date.now() - lastMailAt < MAIL_COOLDOWN_MS){
-        const waitSec = Math.ceil((MAIL_COOLDOWN_MS - (Date.now() - lastMailAt)) / 1000);
-        alert(`連続送信を防ぐため、少し間を空けてください。あと約${waitSec}秒でもう一度送信できます。`);
-        return;
-      }
-      localStorage.setItem('mail-last-sent-at', String(Date.now()));
-
-      // サイト全体で共有する、混雑防止の確認(荒らし・大量送信対策)。
-      const mailOkToProceed = await checkMailRateLimit();
-      if(!mailOkToProceed){
-        alert('サイトが混み合っております。しばらくお待ちください。');
-        return;
-      }
-
-      // これまでのメール送信に加えて、サイト上の管理画面でも確認できるよう、Firebaseにも保存しておく。
-      // 保存に失敗しても、これまで通りメール送信自体は続けられるようにする。
-      try{
-        const fb = window.__siteFirebase;
-        if(fb && fb.ready && !window.__quotaExceeded){
-          fb.addDoc(fb.collection(fb.db, 'inquiries'), {
-            name, from, message, createdAt: fb.serverTimestamp(), read:false
-          }).catch((err)=>{
-            console.error('inquiry save failed:', err);
-            if(window.isQuotaError(err)) window.onQuotaExceeded();
-          });
-        }
-      }catch(err){ console.error('inquiry save failed:', err); }
-
-      const subject = (siteLang === 'en' ? 'Portfolio site inquiry from ' : 'ポートフォリオサイトからのお問い合わせ：') + name;
-      const body = message;
-
-      pendingMessage = { subject, body };
-      lastSubmittedMail = { name, from, message };
-      // 入力した内容は、ここでは消さない(「フォームに戻る」を押した時に、書いた内容が残るように)。
-      // 実際に送信方法を選んだ時点で、消す(finishMailSubmission)。
-      const preview = document.getElementById('mailCopyPreview');
-      const toLabel = siteLang === 'en' ? 'To: ' : '宛先: ';
-      const subjectLabel = siteLang === 'en' ? 'Subject: ' : '件名: ';
-      preview.textContent = toLabel + MAIL_TO + '\n' + subjectLabel + subject + '\n\n' + body;
-      setTimeout(showPicker, 220);
-    });
-
-    const copyBtn = document.getElementById('mailCopyBtn');
-    copyBtn.addEventListener('click', async ()=>{
-      const preview = document.getElementById('mailCopyPreview');
-      const text = preview.textContent;
-      try{
-        await navigator.clipboard.writeText(text);
-      }catch(err){
-        const ta = document.createElement('textarea');
-        ta.value = text;
-        ta.style.position = 'fixed';
-        ta.style.opacity = '0';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-      }
-      const label = copyBtn.querySelector('span');
-      const originalText = label.textContent;
-      label.textContent = siteLang === 'en' ? 'Copied!' : 'コピーしました！';
-      copyBtn.classList.add('copied');
-      setTimeout(()=>{
-        label.textContent = originalText;
-        copyBtn.classList.remove('copied');
-      }, 2000);
-    });
-
-    function buildUrls(provider, to, subject, body){
-      const t = encodeURIComponent(to), s = encodeURIComponent(subject), b = encodeURIComponent(body);
-      const table = {
-        gmail:   { web:'https://mail.google.com/mail/?view=cm&fs=1&to='+t+'&su='+s+'&body='+b, app:'googlegmail:///co?to='+t+'&subject='+s+'&body='+b },
-        outlook: { web:'https://outlook.live.com/mail/0/deeplink/compose?to='+t+'&subject='+s+'&body='+b, app:'ms-outlook://compose?to='+t+'&subject='+s+'&body='+b },
-        yahoo:   { web:'https://compose.mail.yahoo.com/?to='+t+'&subject='+s+'&body='+b, app:'ymail://mail/compose?to='+t+'&subject='+s+'&body='+b }
-      };
-      return table[provider] || { web:'mailto:'+to+'?subject='+s+'&body='+b, app:null };
-    }
-
-    function tryAppThenFallback(appUrl, fallbackUrl){
-      let didHide = false;
-      function onVisibility(){
-        if(document.hidden) didHide = true;
-      }
-      document.addEventListener('visibilitychange', onVisibility);
-      window.addEventListener('blur', onVisibility, { once:true });
-      window.location.href = appUrl;
-      setTimeout(()=>{
-        document.removeEventListener('visibilitychange', onVisibility);
-        if(!didHide){
-          window.open(fallbackUrl, '_blank', 'noopener');
-        }
-      }, 1200);
-    }
-
-    document.querySelectorAll('.mail-provider-btn').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        if(!pendingMessage) return;
-        const provider = btn.dataset.provider;
-        const urls = buildUrls(provider, MAIL_TO, pendingMessage.subject, pendingMessage.body);
-
-        if(provider === 'default'){
-          const tempLink = document.createElement('a');
-          tempLink.href = urls.web;
-          tempLink.rel = 'noopener';
-          document.body.appendChild(tempLink);
-          tempLink.click();
-          document.body.removeChild(tempLink);
-        }else{
-          tryAppThenFallback(urls.app, urls.web);
-        }
-        // 送信方法を選んだので、フォームの内容を消す。
-        finishMailSubmission();
+  
+      mailBtnOpen.addEventListener('click', ()=>{
+        setTimeout(openMailModal, 220);
       });
-    });
-  })();
-  }catch(err){ console.error('mail modal init failed:', err); }
+      mailClose.addEventListener('click', closeMailModal);
+      mailModal.addEventListener('click', (e)=>{ if(e.target === mailModal) closeMailModal(); });
+  
+      if(location.hash === '#open-mail'){
+        document.getElementById('contact').scrollIntoView();
+        setTimeout(openMailModal, 700);
+      }
+  
+      document.addEventListener('keydown', (e)=>{
+        if(e.key === 'Escape' && mailModal.classList.contains('open')) closeMailModal();
+      });
+      providerBack.addEventListener('click', showForm);
+  
+      // 書いている間に、文字数の上限が見えるようにする(リアルタイムのカウンター表示)。
+      // 上限を超えても入力自体は止めず、超えた場合は赤字で知らせ、送信時にブロックする。
+      const MAIL_LIMITS = { mailName:30, mailFrom:100, mailBody:350 };
+      function wireCharCounter(fieldId, countId){
+        const field = document.getElementById(fieldId);
+        const countEl = document.getElementById(countId);
+        const limit = MAIL_LIMITS[fieldId];
+        function update(){
+          const len = field.value.length;
+          countEl.textContent = len + ' / ' + limit + '字';
+          countEl.classList.toggle('over-limit', len > limit);
+        }
+        field.addEventListener('input', update);
+        update();
+      }
+      wireCharCounter('mailName', 'mailNameCount');
+      wireCharCounter('mailFrom', 'mailFromCount');
+      wireCharCounter('mailBody', 'mailBodyCount');
+  
+      // メール送信の、サイト全体で共有する混雑防止(Platform投稿と同じ仕組み)。
+      // ログイン不要の機能のため、専用の別カウンター(mailRateLimit)を使う。
+      const MAIL_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000;
+      const MAIL_RATE_LIMIT_MAX = 40;
+      const MAIL_RATE_LIMIT_BLOCK_MS = 10 * 60 * 1000;
+      async function checkMailRateLimit(){
+        const fb = window.__siteFirebase;
+        if(!fb || !fb.ready) return true; // 未接続時は、誤検知でブロックしない
+        try{
+          const rateLimitRef = fb.doc(fb.db, 'siteConfig', 'mailRateLimit');
+          let isBusy = false;
+          await fb.runTransaction(fb.db, async (tx)=>{
+            const snap = await tx.get(rateLimitRef);
+            const data = snap.exists() ? snap.data() : {};
+            const now = Date.now();
+            if(data.blockedUntil && now < data.blockedUntil){
+              isBusy = true;
+              return;
+            }
+            let windowStart = data.windowStart || now;
+            let count = data.count || 0;
+            if(now - windowStart >= MAIL_RATE_LIMIT_WINDOW_MS){
+              windowStart = now;
+              count = 0;
+            }
+            count += 1;
+            if(count >= MAIL_RATE_LIMIT_MAX){
+              tx.set(rateLimitRef, { windowStart: now, count: 0, blockedUntil: now + MAIL_RATE_LIMIT_BLOCK_MS });
+            }else{
+              tx.set(rateLimitRef, { windowStart: windowStart, count: count, blockedUntil: null });
+            }
+          });
+          return !isBusy;
+        }catch(err){
+          console.error('mail rate limit check failed:', err);
+          return true;
+        }
+      }
+  
+      mailForm.addEventListener('submit', async (e)=>{
+        e.preventDefault();
+        const strip = (v)=> window.stripInvisibleChars ? window.stripInvisibleChars(v) : v;
+        const name = strip(document.getElementById('mailName').value.trim());
+        const from = strip(document.getElementById('mailFrom').value.trim());
+        const message = strip(document.getElementById('mailBody').value.trim());
+  
+        if(name.length > MAIL_LIMITS.mailName || from.length > MAIL_LIMITS.mailFrom || message.length > MAIL_LIMITS.mailBody){
+          alert('文字数の上限を超えている項目があります。各項目の文字数をご確認の上、短くしてから送信してください。');
+          return;
+        }
+  
+        if(containsCodeLikeContent(name) || containsCodeLikeContent(from) || containsCodeLikeContent(message)){
+          alert('コードのような文字列は入力できません。内容をご確認の上、もう一度お試しください。');
+          return;
+        }
+  
+        // 「フォームに戻る」を押したあと、同じ内容で、もう一度送信ボタンを押した場合は、
+        // 保存も、連続送信の制限も、すでに済んでいるので、そのまま、送信方法の選択画面へ進む。
+        if(pendingMessage && lastSubmittedMail
+           && lastSubmittedMail.name === name && lastSubmittedMail.from === from && lastSubmittedMail.message === message){
+          showPicker();
+          return;
+        }
+  
+        // 連続送信への抑止(荒らし対策)。ログイン不要の機能のため、
+        // このブラウザだけの簡易的な記録(localStorage)で、連打を防ぐ。
+        const MAIL_COOLDOWN_MS = 30000; // 30秒
+        const lastMailAt = Number(localStorage.getItem('mail-last-sent-at') || 0);
+        if(Date.now() - lastMailAt < MAIL_COOLDOWN_MS){
+          const waitSec = Math.ceil((MAIL_COOLDOWN_MS - (Date.now() - lastMailAt)) / 1000);
+          alert(`連続送信を防ぐため、少し間を空けてください。あと約${waitSec}秒でもう一度送信できます。`);
+          return;
+        }
+        localStorage.setItem('mail-last-sent-at', String(Date.now()));
+  
+        // サイト全体で共有する、混雑防止の確認(荒らし・大量送信対策)。
+        const mailOkToProceed = await checkMailRateLimit();
+        if(!mailOkToProceed){
+          alert('サイトが混み合っております。しばらくお待ちください。');
+          return;
+        }
+  
+        // これまでのメール送信に加えて、サイト上の管理画面でも確認できるよう、Firebaseにも保存しておく。
+        // 保存に失敗しても、これまで通りメール送信自体は続けられるようにする。
+        try{
+          const fb = window.__siteFirebase;
+          if(fb && fb.ready && !window.__quotaExceeded){
+            fb.addDoc(fb.collection(fb.db, 'inquiries'), {
+              name, from, message, createdAt: fb.serverTimestamp(), read:false
+            }).catch((err)=>{
+              console.error('inquiry save failed:', err);
+              if(window.isQuotaError(err)) window.onQuotaExceeded();
+            });
+          }
+        }catch(err){ console.error('inquiry save failed:', err); }
+  
+        const subject = (siteLang === 'en' ? 'Portfolio site inquiry from ' : 'ポートフォリオサイトからのお問い合わせ：') + name;
+        const body = message;
+  
+        pendingMessage = { subject, body };
+        lastSubmittedMail = { name, from, message };
+        // 入力した内容は、ここでは消さない(「フォームに戻る」を押した時に、書いた内容が残るように)。
+        // 実際に送信方法を選んだ時点で、消す(finishMailSubmission)。
+        const preview = document.getElementById('mailCopyPreview');
+        const toLabel = siteLang === 'en' ? 'To: ' : '宛先: ';
+        const subjectLabel = siteLang === 'en' ? 'Subject: ' : '件名: ';
+        preview.textContent = toLabel + MAIL_TO + '\n' + subjectLabel + subject + '\n\n' + body;
+        setTimeout(showPicker, 220);
+      });
+  
+      const copyBtn = document.getElementById('mailCopyBtn');
+      copyBtn.addEventListener('click', async ()=>{
+        const preview = document.getElementById('mailCopyPreview');
+        const text = preview.textContent;
+        try{
+          await navigator.clipboard.writeText(text);
+        }catch(err){
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.style.position = 'fixed';
+          ta.style.opacity = '0';
+          document.body.appendChild(ta);
+          ta.select();
+          document.execCommand('copy');
+          document.body.removeChild(ta);
+        }
+        const label = copyBtn.querySelector('span');
+        const originalText = label.textContent;
+        label.textContent = siteLang === 'en' ? 'Copied!' : 'コピーしました！';
+        copyBtn.classList.add('copied');
+        setTimeout(()=>{
+          label.textContent = originalText;
+          copyBtn.classList.remove('copied');
+        }, 2000);
+      });
+  
+      function buildUrls(provider, to, subject, body){
+        const t = encodeURIComponent(to), s = encodeURIComponent(subject), b = encodeURIComponent(body);
+        const table = {
+          gmail:   { web:'https://mail.google.com/mail/?view=cm&fs=1&to='+t+'&su='+s+'&body='+b, app:'googlegmail:///co?to='+t+'&subject='+s+'&body='+b },
+          outlook: { web:'https://outlook.live.com/mail/0/deeplink/compose?to='+t+'&subject='+s+'&body='+b, app:'ms-outlook://compose?to='+t+'&subject='+s+'&body='+b },
+          yahoo:   { web:'https://compose.mail.yahoo.com/?to='+t+'&subject='+s+'&body='+b, app:'ymail://mail/compose?to='+t+'&subject='+s+'&body='+b }
+        };
+        return table[provider] || { web:'mailto:'+to+'?subject='+s+'&body='+b, app:null };
+      }
+  
+      function tryAppThenFallback(appUrl, fallbackUrl){
+        let didHide = false;
+        function onVisibility(){
+          if(document.hidden) didHide = true;
+        }
+        document.addEventListener('visibilitychange', onVisibility);
+        window.addEventListener('blur', onVisibility, { once:true });
+        window.location.href = appUrl;
+        setTimeout(()=>{
+          document.removeEventListener('visibilitychange', onVisibility);
+          if(!didHide){
+            window.open(fallbackUrl, '_blank', 'noopener');
+          }
+        }, 1200);
+      }
+  
+      document.querySelectorAll('.mail-provider-btn').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          if(!pendingMessage) return;
+          const provider = btn.dataset.provider;
+          const urls = buildUrls(provider, MAIL_TO, pendingMessage.subject, pendingMessage.body);
+  
+          if(provider === 'default'){
+            const tempLink = document.createElement('a');
+            tempLink.href = urls.web;
+            tempLink.rel = 'noopener';
+            document.body.appendChild(tempLink);
+            tempLink.click();
+            document.body.removeChild(tempLink);
+          }else{
+            tryAppThenFallback(urls.app, urls.web);
+          }
+          // 送信方法を選んだので、フォームの内容を消す。
+          finishMailSubmission();
+        });
+      });
+    })();
+    }catch(err){ console.error('mail modal init failed:', err); }
+  });
 
   try{
   (function(){
@@ -5741,7 +5766,14 @@
             }
           });
           return !isBusy;
-        }catch(err){ console.error('rate limit check failed:', err); return true; }
+        }catch(err){
+          console.error('rate limit check failed:', err);
+          // 「BANされていて、書き込み自体を拒否された」場合は、確認に失敗したのではなく、
+          // はっきり拒否されたということなので、通過させない(混み合っている、として扱う)。
+          // それ以外(通信の一時的な不調など)は、これまで通り、誤検知でブロックしないようにする。
+          if(err && err.code === 'permission-denied') return false;
+          return true;
+        }
       };
     })();
     window.stripInvisibleChars = function(text){
